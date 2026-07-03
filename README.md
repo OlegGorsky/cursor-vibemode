@@ -286,6 +286,6 @@ Linux/macOS/WSL:
 Windows:
 
 - PowerShell
-- Python 3 в `PATH` или Python Launcher `py.exe`
+- Python 3; если его нет, Windows-скрипт попробует поставить его автоматически
 - Cursor, открытый хотя бы один раз
 - WSL опционален

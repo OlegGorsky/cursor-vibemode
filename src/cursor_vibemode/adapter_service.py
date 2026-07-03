@@ -3,18 +3,22 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import CursorVibemodeError
+from .adapter_process import (
+    adapter_base_url,
+    adapter_is_current,
+    adapter_log_tail,
+    is_our_adapter,
+    port_available,
+    start_adapter,
+    wait_until_ready,
+)
 from .paths import (
-    ADAPTER_VERSION,
     DEFAULT_ADAPTER_PORT,
     adapter_config_path,
     adapter_runtime_dir,
@@ -33,7 +37,7 @@ def ensure_adapter(upstream_base_url: str, api_key: str = "") -> AdapterReport:
     install_runtime()
     write_launchers()
     install_autostart()
-    start_adapter()
+    start_adapter(port)
     base_url = adapter_base_url(port)
     if not wait_until_ready(base_url):
         raise CursorVibemodeError(
@@ -41,13 +45,17 @@ def ensure_adapter(upstream_base_url: str, api_key: str = "") -> AdapterReport:
             "не удалось запустить подключение моделей",
             "Локальный слой совместимости не ответил на проверку.",
             "повтори установку; если ошибка останется, передай вывод разработчику.",
-            f"baseUrl={base_url}",
+            adapter_start_detail(base_url),
         )
     return AdapterReport(base_url, port)
 
 
-def adapter_base_url(port: int) -> str:
-    return f"http://127.0.0.1:{port}/v1"
+def adapter_start_detail(base_url: str) -> str:
+    detail = f"baseUrl={base_url}; runtime={adapter_runtime_dir()}"
+    tail = adapter_log_tail()
+    if tail:
+        detail += f"; logTail={tail}"
+    return detail
 
 
 def choose_port() -> int:
@@ -110,7 +118,7 @@ def write_launchers() -> None:
         launcher = runtime / "run-adapter.cmd"
         launcher.write_text(
             "@echo off\r\n"
-            f"set PYTHONPATH={src}\r\n"
+            f"set \"PYTHONPATH={src}\"\r\n"
             f"\"{sys.executable}\" -m cursor_vibemode adapter serve\r\n",
             encoding="utf-8",
         )
@@ -218,63 +226,6 @@ def install_windows_autostart() -> None:
         ],
         10,
     )
-
-
-def start_adapter() -> None:
-    port = read_config_port() or DEFAULT_ADAPTER_PORT
-    if adapter_is_current(port):
-        return
-    launcher = adapter_runtime_dir() / ("run-adapter.cmd" if os.name == "nt" else "run-adapter.sh")
-    log = adapter_runtime_dir() / "adapter.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    command = ["cmd", "/c", str(launcher)] if os.name == "nt" else [str(launcher)]
-    with log.open("ab") as stream:
-        subprocess.Popen(
-            command,
-            stdout=stream,
-            stderr=stream,
-            stdin=subprocess.DEVNULL,
-            close_fds=os.name != "nt",
-            start_new_session=os.name != "nt",
-        )
-
-
-def wait_until_ready(base_url: str, timeout: float = 8.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if adapter_is_current(int(base_url.rsplit(":", 1)[1].split("/", 1)[0])):
-            return True
-        time.sleep(0.2)
-    return False
-
-
-def is_our_adapter(port: int) -> bool:
-    return bool(adapter_health(port))
-
-
-def adapter_is_current(port: int) -> bool:
-    payload = adapter_health(port)
-    return bool(payload and int(payload.get("version") or 0) >= ADAPTER_VERSION)
-
-
-def adapter_health(port: int) -> dict | None:
-    try:
-        with urllib.request.urlopen(
-            f"{adapter_base_url(port)}/cursor-vibemode/health",
-            timeout=1,
-        ) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            if isinstance(payload, dict) and response.status == 200 and payload.get("ok") is True:
-                return payload
-            return None
-    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError):
-        return None
-
-
-def port_available(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(0.5)
-        return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
 def shell_quote(value: str) -> str:

@@ -21,23 +21,15 @@ function Log([string]$Message) { Write-Host $Message }
 function Warn([string]$Message) { Write-Warning $Message }
 function Die([string]$Message) { Write-Error $Message; exit 1 }
 
-function Test-EnvFlag([string]$Value) {
-    return ($Value -match '^(1|true|yes|y|on|да|д)$')
-}
+function Test-EnvFlag([string]$Value) { return ($Value -match '^(1|true|yes|y|on|да|д)$') }
 
 function Enable-Tls12 {
-    try {
-        [Net.ServicePointManager]::SecurityProtocol =
-            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    } catch {}
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
 }
 
 function Read-ClipboardKey {
-    try {
-        $value = (Get-Clipboard -ErrorAction Stop) -join [Environment]::NewLine
-    } catch {
-        Die "Не удалось прочитать ключ из буфера обмена."
-    }
+    try { $value = (Get-Clipboard -ErrorAction Stop) -join [Environment]::NewLine }
+    catch { Die "Не удалось прочитать ключ из буфера обмена." }
     if (-not $value -or -not $value.Trim()) { Die "В буфере обмена нет ключа." }
     return $value.Trim()
 }
@@ -83,14 +75,66 @@ function Read-ApiKey {
     return $plain.Trim()
 }
 
-function Find-Python {
-    foreach ($candidate in @("python", "python3")) {
-        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
-        if ($cmd) { return [pscustomobject]@{ Exe = $cmd.Source; Args = @() } }
+function Test-PythonCandidate([string]$Exe, [object[]]$Args = @()) {
+    try {
+        $probe = @($Args) + "--version"
+        $output = & $Exe @probe 2>$null
+        return ($LASTEXITCODE -eq 0 -and (($output -join " ") -match '^Python 3\.'))
+    } catch { return $false }
+}
+
+function Get-PythonCandidates {
+    $items = @()
+    foreach ($name in @("python", "python3")) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd) { $items += [pscustomobject]@{ Exe = $cmd.Source; Args = @() } }
+    }
+    $roots = @()
+    if ($env:LOCALAPPDATA) { $roots += (Join-Path $env:LOCALAPPDATA "Programs\Python"); $roots += $env:LOCALAPPDATA }
+    $roots += @($env:ProgramFiles, ${env:ProgramFiles(x86)})
+    foreach ($root in $roots) {
+        if (-not $root) { continue }
+        $dirs = Get-ChildItem -LiteralPath $root -Directory -Filter "Python3*" -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending
+        foreach ($dir in $dirs) {
+            $exe = Join-Path $dir.FullName "python.exe"
+            if (Test-Path -LiteralPath $exe) { $items += [pscustomobject]@{ Exe = $exe; Args = @() } }
+        }
     }
     $py = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($py) { return [pscustomobject]@{ Exe = $py.Source; Args = @("-3") } }
-    Die "Python не найден. Установи Python 3 и повтори запуск."
+    if ($py) { $items += [pscustomobject]@{ Exe = $py.Source; Args = @("-3") } }
+    return $items
+}
+
+function Install-Python {
+    if (Test-EnvFlag $env:CURSOR_VIBEMODE_NO_PYTHON_INSTALL) {
+        Die "Python 3 не найден, автоустановка отключена."
+    }
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        Die "Python 3 не найден, а winget недоступен. Установи Python 3 и повтори запуск."
+    }
+    Log "Python 3 не найден. Устанавливаю Python через winget"
+    $attempts = @(
+        ,@("install", "--id", "Python.Python.3.12", "-e", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--silent"),
+        ,@("install", "--id", "Python.Python.3.12", "-e", "--accept-package-agreements", "--accept-source-agreements")
+    )
+    foreach ($wingetArgs in $attempts) {
+        & $winget.Source @wingetArgs
+        if ($LASTEXITCODE -eq 0) { return }
+    }
+    Die "Автоустановка Python не удалась. Установи Python 3 вручную и повтори запуск."
+}
+
+function Find-Python([switch]$AutoInstall) {
+    $candidate = Get-PythonCandidates | Where-Object { Test-PythonCandidate $_.Exe $_.Args } | Select-Object -First 1
+    if ($candidate) { return $candidate }
+    if ($AutoInstall) {
+        Install-Python
+        $candidate = Get-PythonCandidates | Where-Object { Test-PythonCandidate $_.Exe $_.Args } | Select-Object -First 1
+        if ($candidate) { return $candidate }
+    }
+    Die "Python 3 не найден. Установи Python 3 и повтори запуск."
 }
 
 function Download-Repo {
@@ -116,7 +160,7 @@ function Download-Repo {
 
 function Invoke-CursorSetup {
     param([string]$Root, [string]$DbPath, [string]$ApiKey)
-    $python = Find-Python
+    $python = Find-Python -AutoInstall
     $env:PYTHONPATH = Join-Path $Root "src"
     if ($ApiKey -and $ApiKey.Trim()) {
         $env:CURSOR_VIBEMODE_KEY = $ApiKey
@@ -127,33 +171,19 @@ function Invoke-CursorSetup {
     if ($python.Args) { $args += $python.Args }
     $args += @("-m", "cursor_vibemode", "setup", "--non-interactive", "--db", $DbPath)
     $args += @("--model", $Model, "--models", $Models, "--base-url", $BaseUrl)
-    if ($SkipApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_API_CHECK)) {
-        $args += "--skip-api-check"
-    }
-    if ($SkipAppPatch -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_APP_PATCH)) {
-        $args += "--skip-app-patch"
-    }
-    if ($DeepApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_DEEP_API_CHECK)) {
-        $args += "--deep-api-check"
-    }
+    if ($SkipApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_API_CHECK)) { $args += "--skip-api-check" }
+    if ($SkipAppPatch -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_APP_PATCH)) { $args += "--skip-app-patch" }
+    if ($DeepApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_DEEP_API_CHECK)) { $args += "--deep-api-check" }
     if ($Force) { $args += "--force" }
     & $python.Exe @args
     if ($LASTEXITCODE -ne 0) { Die "Настройка Cursor не удалась." }
 }
 
-function Get-WindowsCursorDb {
-    if (-not $env:APPDATA) { return $null }
-    return Join-Path $env:APPDATA "Cursor\User\globalStorage\state.vscdb"
-}
+function Get-WindowsCursorDb { if ($env:APPDATA) { Join-Path $env:APPDATA "Cursor\User\globalStorage\state.vscdb" } }
 
-function Get-WslCommand {
-    return Get-Command wsl.exe -ErrorAction SilentlyContinue
-}
+function Get-WslCommand { Get-Command wsl.exe -ErrorAction SilentlyContinue }
 
-function Get-WslBaseArgs {
-    if ($WslDistro) { return @("--distribution", $WslDistro) }
-    return @()
-}
+function Get-WslBaseArgs { if ($WslDistro) { return @("--distribution", $WslDistro) }; return @() }
 
 function Test-WslReady {
     $wsl = Get-WslCommand
@@ -172,9 +202,7 @@ function Convert-ToWslPath([string]$Path) {
     return ""
 }
 
-function To-Base64([string]$Value) {
-    return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value))
-}
+function To-Base64([string]$Value) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value)) }
 
 function Invoke-WslSetup {
     param([string]$ApiKey, [string]$WindowsDb)
@@ -188,10 +216,7 @@ function Invoke-WslSetup {
 set -euo pipefail
 decode() { printf '%s' "$1" | base64 -d; }
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing $1"; exit 42; }; }
-need curl
-need tar
-need python3
-need base64
+need curl; need tar; need python3; need base64
 
 api_key="$(decode '__KEY_B64__')"
 repo="$(decode '__REPO_B64__')"
@@ -213,18 +238,10 @@ curl -fsSL \
 export CURSOR_VIBEMODE_KEY="$api_key"
 args=(setup --non-interactive --model "$model" --models "$models" --base-url "$base_url")
 args+=(--skip-app-patch)
-if [[ -n "$db_path" && -f "$db_path" ]]; then
-  args+=(--db "$db_path")
-fi
-if [[ "__SKIP_API_CHECK__" == "1" ]]; then
-  args+=(--skip-api-check)
-fi
-if [[ "__DEEP_API_CHECK__" == "1" ]]; then
-  args+=(--deep-api-check)
-fi
-if [[ "__FORCE__" == "1" ]]; then
-  args+=(--force)
-fi
+if [[ -n "$db_path" && -f "$db_path" ]]; then args+=(--db "$db_path"); fi
+if [[ "__SKIP_API_CHECK__" == "1" ]]; then args+=(--skip-api-check); fi
+if [[ "__DEEP_API_CHECK__" == "1" ]]; then args+=(--deep-api-check); fi
+if [[ "__FORCE__" == "1" ]]; then args+=(--force); fi
 "$tmp/cursor-vibemode" "${args[@]}"
 '@
     $script = $script.Replace("__KEY_B64__", (To-Base64 $ApiKey))
