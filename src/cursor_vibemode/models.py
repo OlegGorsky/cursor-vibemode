@@ -64,11 +64,10 @@ def model_catalog_entry(
     template: dict[str, Any] | None,
 ) -> dict[str, Any]:
     entry = dict(template or {})
-    cursor_id = cursor_model_id(provider_id)
     label = display_name(provider_id)
     entry.update(
         {
-            "name": cursor_id,
+            "name": provider_id,
             "serverModelName": provider_id,
             "clientDisplayName": label,
             "inputboxShortModelName": label,
@@ -99,7 +98,21 @@ def model_catalog_entry(
 
 def catalog_provider_model_id(entry: dict[str, Any]) -> str:
     name = entry.get("name")
-    if not is_cursor_vibemode_model(name):
+    if not isinstance(name, str):
         return ""
+    if not is_cursor_vibemode_model(name):
+        label = " ".join(
+            str(entry.get(key) or "")
+            for key in (
+                "clientDisplayName",
+                "inputboxShortModelName",
+                "displayNameOutsidePicker",
+            )
+        )
+        if entry.get("isUserAdded") is not True and "Vibemode" not in label:
+            return ""
+        server_name = entry.get("serverModelName")
+        model_id = str(server_name or name)
+        return provider_model_id(model_id)
     server_name = entry.get("serverModelName")
     return str(server_name or provider_model_id(name))

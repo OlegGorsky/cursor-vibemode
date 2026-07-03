@@ -80,8 +80,11 @@ class CursorVibemodeTests(unittest.TestCase):
                 for item in app_user["availableDefaultModels2"]
                 if isinstance(item, dict) and item.get("name")
             }
-            self.assertEqual(catalog[alias]["serverModelName"], "gpt-5.5")
-            self.assertEqual(catalog[alias]["clientDisplayName"], "GPT-5.5 [Vibemode]")
+            self.assertEqual(app_user["availableAPIKeyModels"], ["gpt-5.4", "gpt-5.5"])
+            self.assertEqual(app_user["localProviderModelIds"], ["gpt-5.4", "gpt-5.5"])
+            self.assertNotIn(alias, catalog)
+            self.assertEqual(catalog["gpt-5.5"]["serverModelName"], "gpt-5.5")
+            self.assertEqual(catalog["gpt-5.5"]["clientDisplayName"], "GPT-5.5 [Vibemode]")
 
     def test_setup_updates_unknown_model_config_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -118,13 +121,10 @@ class CursorVibemodeTests(unittest.TestCase):
                 conn.close()
 
             future_mode = app_user["aiSettings"]["modelConfig"]["future-agent-window"]
-            self.assertEqual(future_mode["modelName"], cursor_model_id("gpt-5.4"))
-            self.assertEqual(
-                future_mode["selectedModels"][0]["modelId"],
-                cursor_model_id("gpt-5.4"),
-            )
+            self.assertEqual(future_mode["modelName"], "gpt-5.4")
+            self.assertEqual(future_mode["selectedModels"][0]["modelId"], "gpt-5.4")
 
-    def test_setup_uses_cursor_alias_for_native_model_collision(self) -> None:
+    def test_setup_uses_raw_models_for_native_model_collision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "state.vscdb"
             native_gpt = {
@@ -178,21 +178,25 @@ class CursorVibemodeTests(unittest.TestCase):
             }
             self.assertIn("gpt-5.5", catalog)
             self.assertEqual(catalog["gpt-5.5"]["clientDisplayName"], "GPT-5.5")
-            self.assertEqual(catalog[gpt_alias]["serverModelName"], "gpt-5.5")
-            self.assertTrue(catalog[gpt_alias]["isUserAdded"])
-            self.assertNotIn("deepseek-v4-pro", catalog)
-            self.assertIn(deepseek_alias, catalog)
-            self.assertEqual(app_user["composerModel"], gpt_alias)
+            self.assertNotIn(gpt_alias, catalog)
+            self.assertNotIn(deepseek_alias, catalog)
+            self.assertIn("deepseek-v4-pro", catalog)
+            self.assertEqual(
+                catalog["deepseek-v4-pro"]["serverModelName"],
+                "deepseek-v4-pro",
+            )
+            self.assertTrue(catalog["deepseek-v4-pro"]["isUserAdded"])
+            self.assertEqual(app_user["composerModel"], "gpt-5.5")
             self.assertEqual(
                 app_user["aiSettings"]["modelConfig"]["composer"]["selectedModels"][0][
                     "modelId"
                 ],
-                gpt_alias,
+                "gpt-5.5",
             )
-            self.assertNotIn("gpt-5.5", app_user["aiSettings"]["userAddedModels"])
-            self.assertNotIn("deepseek-v4-pro", app_user["aiSettings"]["userAddedModels"])
-            self.assertIn(gpt_alias, app_user["aiSettings"]["userAddedModels"])
-            self.assertIn(deepseek_alias, app_user["aiSettings"]["userAddedModels"])
+            self.assertIn("gpt-5.5", app_user["aiSettings"]["userAddedModels"])
+            self.assertIn("deepseek-v4-pro", app_user["aiSettings"]["userAddedModels"])
+            self.assertNotIn(gpt_alias, app_user["aiSettings"]["userAddedModels"])
+            self.assertNotIn(deepseek_alias, app_user["aiSettings"]["userAddedModels"])
 
     def test_detects_editor_and_agent_window_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

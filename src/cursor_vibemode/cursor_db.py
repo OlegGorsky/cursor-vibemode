@@ -13,6 +13,7 @@ from typing import Any
 from .models import (
     catalog_provider_model_id,
     cursor_model_id,
+    is_cursor_vibemode_model,
     model_catalog_entry,
     provider_model_id,
 )
@@ -68,8 +69,12 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def has_item_table(conn: sqlite3.Connection) -> bool:
+    return has_table(conn, "ItemTable")
+
+
+def has_table(conn: sqlite3.Connection, table: str) -> bool:
     row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='ItemTable'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
     ).fetchone()
     return bool(row)
 
@@ -117,16 +122,46 @@ def touch_marker(conn: sqlite3.Connection, keys: list[str]) -> None:
         write_json_value(conn, MARKER_KEY, marker)
 
 
+def unique_provider_ids(model_ids: list[str]) -> list[str]:
+    return list(dict.fromkeys(provider_model_id(model_id) for model_id in model_ids))
+
+
+def sequence(value: object) -> list[Any]:
+    return list(value) if isinstance(value, (list, tuple, set)) else []
+
+
+def merge_enabled_models(current: object, provider_ids: list[str]) -> list[str]:
+    values = []
+    for item in sequence(current):
+        if isinstance(item, str):
+            values.append(provider_model_id(item))
+    for model_id in provider_ids:
+        values.append(model_id)
+    return list(dict.fromkeys(values))
+
+
+def remove_model_overrides(current: object, provider_ids: list[str]) -> list[str]:
+    provider_set = set(provider_ids)
+    aliases = {cursor_model_id(model_id) for model_id in provider_ids}
+    values = []
+    for item in sequence(current):
+        if item in provider_set or item in aliases:
+            continue
+        values.append(item)
+    return values
+
+
 def register_models(data: dict[str, Any], model_ids: list[str]) -> None:
-    provider_ids = list(dict.fromkeys(provider_model_id(model_id) for model_id in model_ids))
-    cursor_ids = [cursor_model_id(model_id) for model_id in provider_ids]
+    provider_ids = unique_provider_ids(model_ids)
+    data["availableAPIKeyModels"] = provider_ids
+    data["localProviderModelIds"] = provider_ids
+
     ai_settings = data.setdefault("aiSettings", {})
     for key in ("userAddedModels", "modelOverrideEnabled"):
-        current = [item for item in list(ai_settings.get(key) or []) if item not in provider_ids]
-        for model_id in cursor_ids:
-            if model_id not in current:
-                current.append(model_id)
-        ai_settings[key] = current
+        ai_settings[key] = merge_enabled_models(ai_settings.get(key), provider_ids)
+    for key in ("modelOverrideDisabled", "modelsWithNoDefaultSwitch"):
+        if key in ai_settings:
+            ai_settings[key] = remove_model_overrides(ai_settings.get(key), provider_ids)
 
     catalog = list(data.get("availableDefaultModels2") or [])
     by_name = {}
@@ -134,12 +169,12 @@ def register_models(data: dict[str, Any], model_ids: list[str]) -> None:
         if not isinstance(item, dict):
             continue
         name = item.get("name")
-        if name in provider_ids and item.get("isUserAdded") is True:
+        if not isinstance(name, str) or is_cursor_vibemode_model(name):
             continue
         by_name[name] = item
     for model_id in provider_ids:
-        alias = cursor_model_id(model_id)
-        by_name[alias] = model_catalog_entry(model_id, by_name.get(alias))
+        if model_id not in by_name or by_name[model_id].get("isUserAdded") is True:
+            by_name[model_id] = model_catalog_entry(model_id, by_name.get(model_id))
     data["availableDefaultModels2"] = list(by_name.values())
 
 
@@ -166,11 +201,84 @@ def patch_application_user(
     model_ids: list[str],
 ) -> dict[str, Any]:
     provider_id = provider_model_id(model_id)
+    normalize_alias_values(data)
     data["openAIBaseUrl"] = base_url.rstrip("/")
     data["useOpenAIKey"] = True
     register_models(data, model_ids)
-    set_default_model(data, cursor_model_id(provider_id))
+    set_default_model(data, provider_id)
     return data
+
+
+def normalize_alias_values(value: Any) -> bool:
+    changed = False
+    if isinstance(value, dict):
+        for key, item in list(value.items()):
+            target_key = provider_model_id(key) if is_cursor_vibemode_model(key) else key
+            if target_key != key:
+                value.pop(key)
+                item = merge_alias_key_value(value.get(target_key), item)
+                value[target_key] = item
+                changed = True
+            if is_cursor_vibemode_model(item):
+                value[target_key] = provider_model_id(item)
+                changed = True
+            elif isinstance(item, (dict, list)):
+                changed = normalize_alias_values(item) or changed
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            if is_cursor_vibemode_model(item):
+                value[index] = provider_model_id(item)
+                changed = True
+            elif isinstance(item, (dict, list)):
+                changed = normalize_alias_values(item) or changed
+    return changed
+
+
+def merge_alias_key_value(current: Any, incoming: Any) -> Any:
+    if current is None:
+        return incoming
+    if isinstance(current, (int, float)) and isinstance(incoming, (int, float)):
+        return max(current, incoming)
+    return current
+
+
+def cleanup_cursor_disk_models(conn: sqlite3.Connection) -> None:
+    if not has_table(conn, "cursorDiskKV"):
+        return
+    rows = conn.execute(
+        "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'"
+    ).fetchall()
+    for key, raw_value in rows:
+        text = (
+            raw_value.decode("utf-8", errors="replace")
+            if isinstance(raw_value, bytes)
+            else str(raw_value)
+        )
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict) or not normalize_alias_values(data):
+            continue
+        conn.execute(
+            "UPDATE cursorDiskKV SET value=? WHERE key=?",
+            (json.dumps(data, ensure_ascii=False, separators=(",", ":")), key),
+        )
+
+
+def read_registered_models(data: dict[str, Any]) -> list[str]:
+    models: list[str] = []
+    for key in ("localProviderModelIds", "availableAPIKeyModels"):
+        for item in sequence(data.get(key)):
+            if isinstance(item, str):
+                models.append(provider_model_id(item))
+    for item in sequence(data.get("availableDefaultModels2")):
+        if not isinstance(item, dict):
+            continue
+        model_id = catalog_provider_model_id(item)
+        if model_id:
+            models.append(provider_model_id(model_id))
+    return list(dict.fromkeys(models))
 
 
 def read_status(db_path: Path) -> CursorStatus:
@@ -180,14 +288,6 @@ def read_status(db_path: Path) -> CursorStatus:
         if not has_item_table(conn):
             return CursorStatus(db_path, False, False, None, "", "", [])
         app_user = read_json_value(conn, APP_USER_KEY)
-        catalog = app_user.get("availableDefaultModels2") or []
-        models = []
-        for item in catalog:
-            if not isinstance(item, dict):
-                continue
-            model_id = catalog_provider_model_id(item)
-            if model_id:
-                models.append(model_id)
         composer_model = str(app_user.get("composerModel") or "")
         return CursorStatus(
             db_path=db_path,
@@ -196,7 +296,7 @@ def read_status(db_path: Path) -> CursorStatus:
             use_openai_key=app_user.get("useOpenAIKey"),
             base_url=str(app_user.get("openAIBaseUrl") or ""),
             composer_model=provider_model_id(composer_model),
-            registered_models=models,
+            registered_models=read_registered_models(app_user),
         )
 
 
@@ -239,6 +339,7 @@ def apply_setup(
         )
         write_json_value(conn, APP_USER_KEY, app_user)
         set_value(conn, OPENAI_KEY_STORAGE, api_key)
+        cleanup_cursor_disk_models(conn)
         touch_marker(conn, [APP_USER_KEY, OPENAI_KEY_STORAGE])
         conn.commit()
     return backups
