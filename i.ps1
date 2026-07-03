@@ -97,8 +97,13 @@ function Download-Repo {
     Enable-Tls12
     $zip = Join-Path $Target "repo.zip"
     $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $url = "https://github.com/$Repo/archive/refs/heads/$Ref.zip?v=$stamp"
     $headers = @{ "Cache-Control" = "no-cache"; "Pragma" = "no-cache" }
+    $resolvedRef = $Ref
+    try {
+        $commit = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/$Ref?v=$stamp" -UseBasicParsing -Headers $headers
+        if ($commit.sha) { $resolvedRef = $commit.sha }
+    } catch {}
+    $url = "https://github.com/$Repo/archive/$resolvedRef.zip?v=$stamp"
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -Headers $headers
     Expand-Archive -LiteralPath $zip -DestinationPath $Target -Force
     $dir = Get-ChildItem -LiteralPath $Target -Directory |
