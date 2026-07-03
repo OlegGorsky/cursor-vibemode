@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -196,7 +197,7 @@ def patch_application_user(
 def read_status(db_path: Path) -> CursorStatus:
     if not db_path.is_file():
         return CursorStatus(db_path, False, False, None, "", "", [])
-    with connect(db_path) as conn:
+    with closing(connect(db_path)) as conn:
         if not has_item_table(conn):
             return CursorStatus(db_path, False, False, None, "", "", [])
         app_user = read_json_value(conn, APP_USER_KEY)
@@ -216,7 +217,7 @@ def read_status(db_path: Path) -> CursorStatus:
 def read_openai_key(db_path: Path) -> str:
     if not db_path.is_file():
         return ""
-    with connect(db_path) as conn:
+    with closing(connect(db_path)) as conn:
         if not has_item_table(conn):
             return ""
         return get_value(conn, OPENAI_KEY_STORAGE).strip()
@@ -232,7 +233,7 @@ def apply_setup(
     backup: bool = True,
 ) -> list[Path]:
     backups = backup_database(db_path) if backup else []
-    with connect(db_path) as conn:
+    with closing(connect(db_path)) as conn:
         if not has_item_table(conn):
             raise RuntimeError(f"ItemTable not found in {db_path}")
         app_user = read_json_value(conn, APP_USER_KEY)
@@ -254,7 +255,7 @@ def apply_setup(
 
 def set_openai_enabled(db_path: Path, enabled: bool, *, backup: bool = True) -> list[Path]:
     backups = backup_database(db_path) if backup else []
-    with connect(db_path) as conn:
+    with closing(connect(db_path)) as conn:
         if not has_item_table(conn):
             raise RuntimeError(f"ItemTable not found in {db_path}")
         app_user = read_json_value(conn, APP_USER_KEY)
@@ -267,7 +268,7 @@ def set_openai_enabled(db_path: Path, enabled: bool, *, backup: bool = True) -> 
 
 def remove_openai_key(db_path: Path, *, backup: bool = True) -> list[Path]:
     backups = set_openai_enabled(db_path, False, backup=backup)
-    with connect(db_path) as conn:
+    with closing(connect(db_path)) as conn:
         conn.execute("DELETE FROM ItemTable WHERE key=?", (OPENAI_KEY_STORAGE,))
         conn.commit()
     return backups

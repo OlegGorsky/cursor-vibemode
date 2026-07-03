@@ -36,8 +36,12 @@ WSL, если `wsl.exe` есть и default distro уже инициализир
 4. записывает ключ в `cursorAuth/openAIKey`;
 5. выставляет `openAIBaseUrl = https://api.vibemod.pro/v1`;
 6. включает `useOpenAIKey = true`;
-7. добавляет модели Vibemode;
-8. проверяет API через `/v1/models`.
+7. получает список моделей Vibemode через `/v1/models`;
+8. добавляет в Cursor все модели, которые вернул API;
+9. проверяет API через `/v1/models`.
+
+Если API-проверка отключена, скрипт использует встроенный резервный список
+моделей.
 
 После успешной настройки открой Cursor заново.
 
@@ -94,6 +98,12 @@ $env:CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD='1'; irm https://raw.githubusercontent.c
 $env:CURSOR_VIBEMODE_SKIP_API_CHECK='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_SKIP_API_CHECK
 ```
 
+Запустить глубокую endpoint-проверку:
+
+```powershell
+$env:CURSOR_VIBEMODE_DEEP_API_CHECK='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_DEEP_API_CHECK
+```
+
 Настроить конкретный WSL-дистрибутив:
 
 ```powershell
@@ -112,6 +122,12 @@ $env:CURSOR_VIBEMODE_SKIP_API_CHECK='1'; irm https://raw.githubusercontent.com/O
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --skip-api-check
+```
+
+Запустить глубокую endpoint-проверку:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --deep-api-check
 ```
 
 Указать путь к Cursor DB вручную:
@@ -143,18 +159,75 @@ cd cursor-vibemode
 ./cursor-vibemode doctor
 ./cursor-vibemode status
 ./cursor-vibemode setup --model gpt-5.4
+./cursor-vibemode repair
+./cursor-vibemode verify
+./cursor-vibemode watch
+./cursor-vibemode toggle
 ./cursor-vibemode disable
 ./cursor-vibemode enable
 ./cursor-vibemode remove --forget-key
 ```
 
+`repair` заново применяет ключ, base URL, `useOpenAIKey`, labels и каталог
+моделей. Это полезно после обновления Cursor или если модельные подписи/тумблер
+сбились.
+
+`watch` держит `useOpenAIKey=true`, если Cursor сам сбрасывает этот флаг. По
+умолчанию проверяет базу раз в 30 секунд:
+
+```bash
+./cursor-vibemode watch
+```
+
+`toggle` быстро включает или выключает BYOK без удаления ключа и URL.
+
+## Модели и endpoint-проверка
+
+Vibemode отдает не только GPT-модели. Поэтому обычный `setup` по умолчанию
+берет полный список из `/v1/models` и регистрирует все возвращенные model ID в
+Cursor. Вручную можно выбрать режим:
+
+```bash
+./cursor-vibemode setup --models auto      # default, все из /models
+./cursor-vibemode setup --models builtin   # встроенный резервный список
+./cursor-vibemode setup --models gpt-5.4,deepseek-v4-pro
+```
+
+Глубокая проверка учитывает разные endpoint-семейства:
+
+- `gpt-*` проверяются через `/v1/responses`;
+- остальные модели проверяются через `/v1/chat/completions`.
+
+Запустить глубокую проверку после установки:
+
+```bash
+./cursor-vibemode verify
+```
+
+Или сразу во время установки:
+
+```bash
+./cursor-vibemode setup --deep-api-check
+```
+
+Обычный `/v1/models` почти ничего не стоит и проверяет только доступность
+каталога. `verify` и `--deep-api-check` отправляют короткий smoke-запрос на
+каждую модель, поэтому они могут списать минимальные токены у провайдера.
+
 ## Важно
 
 - Перед `setup`, `enable`, `disable` и `remove` Cursor должен быть закрыт.
+- Перед `repair` Cursor тоже должен быть закрыт.
 - Скрипт не читает `~/.codex`, `~/.codex2` и `CODEX_KEY`.
 - Обычный `setup` получает ключ прямо в терминале.
 - Ключ может быть сохранен только в локальный cache `~/.cursor-vibemode/auth.json`.
 - Если Cursor не был открыт ни разу, `state.vscdb` может еще не существовать.
+- Cursor может блокировать `localhost`, `127.0.0.1` и private network URL как
+  Override OpenAI Base URL. Для локального прокси обычно нужен публичный HTTPS
+  tunnel, например Cloudflare Tunnel или ngrok.
+- Cursor-native модели вроде Composer могут конфликтовать с включенным BYOK.
+  В таком случае выключай BYOK через `./cursor-vibemode toggle` или горячую
+  клавишу Cursor `Cmd/Ctrl+Shift+0`, ключ при этом не удаляется.
 
 ## Проверка после установки
 

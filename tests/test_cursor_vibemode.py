@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from cursor_vibemode.api import endpoint_for_model, endpoint_payload
 from cursor_vibemode.cursor_db import (
     apply_setup,
     read_openai_key,
@@ -16,7 +17,9 @@ from cursor_vibemode.cursor_db import (
     set_openai_enabled,
 )
 from cursor_vibemode.keys import resolve_api_key, save_local_key
+from cursor_vibemode.operations import parse_model_list
 from cursor_vibemode.paths import APP_USER_KEY, MARKER_KEY, OPENAI_KEY_STORAGE
+from cursor_vibemode.url_safety import host_warnings, is_private_host
 
 
 def make_db(path: Path, app_user: dict | None = None) -> None:
@@ -55,6 +58,31 @@ class CursorVibemodeTests(unittest.TestCase):
             self.assertEqual(status.composer_model, "gpt-5.4")
             self.assertIn("gpt-5.5", status.registered_models)
             self.assertEqual(read_openai_key(db), "sk-test-123456")
+
+    def test_auto_model_list_prefers_api_models(self) -> None:
+        models = parse_model_list(None, ["gpt-5.4", "deepseek-v4-pro", "gpt-5.4"])
+
+        self.assertEqual(models, ["gpt-5.4", "deepseek-v4-pro"])
+
+    def test_endpoint_routing_uses_responses_for_gpt_only(self) -> None:
+        self.assertEqual(endpoint_for_model("gpt-5.4"), "responses")
+        self.assertEqual(endpoint_for_model("GPT-5.4-mini"), "responses")
+        self.assertEqual(endpoint_for_model("deepseek-v4-pro"), "chat/completions")
+        self.assertEqual(endpoint_for_model("kimi-k2.6"), "chat/completions")
+
+        responses_payload = endpoint_payload("gpt-5.4", "responses")
+        chat_payload = endpoint_payload("deepseek-v4-pro", "chat/completions")
+        self.assertIn("input", responses_payload)
+        self.assertIn("messages", chat_payload)
+
+    def test_private_url_warnings(self) -> None:
+        self.assertTrue(is_private_host("127.0.0.1"))
+        self.assertTrue(is_private_host("192.168.1.2"))
+        self.assertTrue(is_private_host("localhost"))
+        self.assertFalse(is_private_host("api.vibemod.pro"))
+
+        warnings = host_warnings("http://127.0.0.1:8000/v1")
+        self.assertGreaterEqual(len(warnings), 2)
 
     def test_setup_creates_missing_application_user_and_marker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

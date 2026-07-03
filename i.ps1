@@ -1,7 +1,9 @@
 param(
     [string]$Model = "gpt-5.4",
+    [string]$Models = "auto",
     [string]$BaseUrl = "https://api.vibemod.pro/v1",
     [switch]$SkipApiCheck,
+    [switch]$DeepApiCheck,
     [switch]$ReplaceKey,
     [switch]$KeyFromClipboard,
     [switch]$NoWsl,
@@ -112,9 +114,12 @@ function Invoke-CursorSetup {
     $args = @()
     if ($python.Args) { $args += $python.Args }
     $args += @("-m", "cursor_vibemode", "setup", "--non-interactive", "--db", $DbPath)
-    $args += @("--model", $Model, "--base-url", $BaseUrl)
+    $args += @("--model", $Model, "--models", $Models, "--base-url", $BaseUrl)
     if ($SkipApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_API_CHECK)) {
         $args += "--skip-api-check"
+    }
+    if ($DeepApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_DEEP_API_CHECK)) {
+        $args += "--deep-api-check"
     }
     if ($Force) { $args += "--force" }
     & $python.Exe @args
@@ -177,6 +182,7 @@ api_key="$(decode '__KEY_B64__')"
 repo="$(decode '__REPO_B64__')"
 ref="$(decode '__REF_B64__')"
 model="$(decode '__MODEL_B64__')"
+models="$(decode '__MODELS_B64__')"
 base_url="$(decode '__BASE_URL_B64__')"
 db_path="$(decode '__DB_B64__')"
 tmp="$(mktemp -d)"
@@ -186,12 +192,15 @@ curl -fsSL "https://github.com/${repo}/archive/refs/heads/${ref}.tar.gz" |
   tar -xz -C "$tmp" --strip-components=1
 
 export CURSOR_VIBEMODE_KEY="$api_key"
-args=(setup --non-interactive --model "$model" --base-url "$base_url")
+args=(setup --non-interactive --model "$model" --models "$models" --base-url "$base_url")
 if [[ -n "$db_path" && -f "$db_path" ]]; then
   args+=(--db "$db_path")
 fi
 if [[ "__SKIP_API_CHECK__" == "1" ]]; then
   args+=(--skip-api-check)
+fi
+if [[ "__DEEP_API_CHECK__" == "1" ]]; then
+  args+=(--deep-api-check)
 fi
 if [[ "__FORCE__" == "1" ]]; then
   args+=(--force)
@@ -202,11 +211,14 @@ fi
     $script = $script.Replace("__REPO_B64__", (To-Base64 $Repo))
     $script = $script.Replace("__REF_B64__", (To-Base64 $Ref))
     $script = $script.Replace("__MODEL_B64__", (To-Base64 $Model))
+    $script = $script.Replace("__MODELS_B64__", (To-Base64 $Models))
     $script = $script.Replace("__BASE_URL_B64__", (To-Base64 $BaseUrl))
     $skipFlag = if ($SkipApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_API_CHECK)) { "1" } else { "0" }
+    $deepFlag = if ($DeepApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_DEEP_API_CHECK)) { "1" } else { "0" }
     $forceFlag = if ($Force) { "1" } else { "0" }
     $script = $script.Replace("__DB_B64__", (To-Base64 $dbWsl))
     $script = $script.Replace("__SKIP_API_CHECK__", $skipFlag)
+    $script = $script.Replace("__DEEP_API_CHECK__", $deepFlag)
     $script = $script.Replace("__FORCE__", $forceFlag)
 
     $args = @(Get-WslBaseArgs) + @("--", "bash", "-s")
