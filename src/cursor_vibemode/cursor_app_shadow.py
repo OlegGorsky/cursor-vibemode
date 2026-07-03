@@ -16,6 +16,7 @@ APP_COPY_RELS = {
     Path("out/vs/workbench/workbench.desktop.main.js"),
     Path("out/vs/workbench/workbench.glass.main.js"),
 }
+APP_COPY_DIRS = {"extensions"}
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ def existing_shadow_cursor_app(source_app_root: Path) -> ShadowCursorApp | None:
     app_root = dest_root / "resources" / "app"
     if app_root.is_dir():
         repair_shadow_entrypoints(source_app_root.parent.parent, dest_root)
+        repair_shadow_extensions(source_app_root, app_root)
         launcher = write_launcher(dest_root)
         desktop = write_desktop_entry(launcher)
         return ShadowCursorApp(app_root, launcher, desktop)
@@ -131,12 +133,50 @@ def mirror_app_tree(source_app: Path, dest_app: Path) -> None:
     for source in source_app.rglob("*"):
         rel = source.relative_to(source_app)
         dest = dest_app / rel
-        if source.is_dir():
+        if source.is_symlink():
+            if should_copy_app_file(rel) and source.is_file():
+                copy_writable(source.resolve(), dest, executable=is_executable(source))
+            else:
+                dest.symlink_to(source)
+        elif source.is_dir():
             dest.mkdir(exist_ok=True)
-        elif rel in APP_COPY_RELS:
-            copy_writable(source, dest)
+        elif should_copy_app_file(rel):
+            copy_writable(source, dest, executable=is_executable(source))
         else:
             dest.symlink_to(source)
+
+
+def repair_shadow_extensions(source_app: Path, dest_app: Path) -> None:
+    source_extensions = source_app / "extensions"
+    dest_extensions = dest_app / "extensions"
+    if not source_extensions.is_dir():
+        return
+    if dest_extensions.exists() and not extension_tree_needs_repair(dest_extensions):
+        return
+    if dest_extensions.exists() or dest_extensions.is_symlink():
+        dest_extensions.unlink() if dest_extensions.is_symlink() else shutil.rmtree(dest_extensions)
+    copy_tree_writable(source_extensions, dest_extensions)
+
+
+def extension_tree_needs_repair(dest_extensions: Path) -> bool:
+    required = (
+        "cursor-agent-exec/dist/main.js",
+        "cursor-always-local/dist/main.js",
+        "cursor-mcp/dist/main.js",
+    )
+    for rel in required:
+        path = dest_extensions / rel
+        if not path.is_file() or path.is_symlink():
+            return True
+    return False
+
+
+def should_copy_app_file(rel: Path) -> bool:
+    return rel in APP_COPY_RELS or (rel.parts and rel.parts[0] in APP_COPY_DIRS)
+
+
+def copy_tree_writable(source: Path, dest: Path) -> None:
+    shutil.copytree(source, dest, symlinks=False)
 
 
 def copy_writable(source: Path, dest: Path, *, executable: bool = False) -> None:
@@ -145,6 +185,10 @@ def copy_writable(source: Path, dest: Path, *, executable: bool = False) -> None
         dest.unlink()
     shutil.copy2(source, dest)
     dest.chmod(0o755 if executable else 0o644)
+
+
+def is_executable(path: Path) -> bool:
+    return bool(path.stat().st_mode & 0o111)
 
 
 def write_launcher(dest_root: Path) -> Path:

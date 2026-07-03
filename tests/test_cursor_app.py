@@ -38,6 +38,17 @@ def make_app(root: Path, *, local_mode: str | None = LOCAL_MODE_DISABLED) -> Non
     )
 
 
+def make_extensions(root: Path) -> None:
+    for name in ("cursor-agent-exec", "cursor-always-local", "cursor-mcp"):
+        ext = root / "extensions" / name
+        (ext / "dist").mkdir(parents=True)
+        (ext / "package.json").write_text(
+            json.dumps({"publisher": "anysphere", "name": name, "main": "./dist/main"}),
+            encoding="utf-8",
+        )
+        (ext / "dist" / "main.js").write_text("module.exports = {}", encoding="utf-8")
+
+
 def checksum(path: Path) -> str:
     return base64.b64encode(hashlib.sha256(path.read_bytes()).digest()).decode("ascii").rstrip("=")
 
@@ -97,6 +108,7 @@ class CursorAppPatchTests(unittest.TestCase):
             (source_root / "bin").mkdir()
             (source_root / "bin" / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
             make_app(app_root)
+            make_extensions(app_root)
             for rel in (
                 "product.json",
                 "out/main.js",
@@ -116,6 +128,7 @@ class CursorAppPatchTests(unittest.TestCase):
             self.assertIn("/bin/cursor", report.launcher.read_text(encoding="utf-8"))
             self.assertFalse((report.app_root.parent.parent / "bin").is_symlink())
             self.assertFalse((report.app_root.parent.parent / "bin" / "cursor").is_symlink())
+            self.assertFalse((report.app_root / "extensions" / "cursor-agent-exec" / "dist" / "main.js").is_symlink())
             self.assertNotEqual(report.app_root, app_root)
             self.assertIn(LOCAL_MODE_DISABLED, (app_root / "out" / "main.js").read_text(encoding="utf-8"))
             self.assertIn(LOCAL_MODE_ENABLED, (report.app_root / "out" / "main.js").read_text(encoding="utf-8"))
@@ -131,6 +144,7 @@ class CursorAppPatchTests(unittest.TestCase):
             (source_root / "bin").mkdir()
             (source_root / "bin" / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
             make_app(app_root)
+            make_extensions(app_root)
             for rel in (
                 "product.json",
                 "out/main.js",
@@ -149,6 +163,40 @@ class CursorAppPatchTests(unittest.TestCase):
 
             self.assertFalse((repaired.app_root.parent.parent / "bin").is_symlink())
             self.assertFalse((repaired.app_root.parent.parent / "bin" / "cursor").is_symlink())
+
+    @unittest.skipIf(__import__("sys").platform != "linux", "shadow copy fallback is Linux-only")
+    def test_existing_shadow_repairs_symlinked_extensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source_root = base / "source" / "cursor"
+            app_root = source_root / "resources" / "app"
+            source_root.mkdir(parents=True)
+            (source_root / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
+            (source_root / "bin").mkdir()
+            (source_root / "bin" / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
+            make_app(app_root)
+            make_extensions(app_root)
+            for rel in (
+                "product.json",
+                "out/main.js",
+                "out/vs/workbench/workbench.desktop.main.js",
+                "out/vs/workbench/workbench.glass.main.js",
+            ):
+                (app_root / rel).chmod(0o444)
+
+            env = {"HOME": str(base / "home"), "XDG_DATA_HOME": str(base / "xdg")}
+            with mock.patch.dict("os.environ", env, clear=False):
+                report = patch_cursor_app(str(app_root))
+                shadow_ext = report.app_root / "extensions"
+                shutil.rmtree(shadow_ext)
+                shadow_ext.mkdir()
+                target = app_root / "extensions" / "cursor-agent-exec"
+                (shadow_ext / "cursor-agent-exec").symlink_to(target, target_is_directory=True)
+                repaired = patch_cursor_app(str(app_root))
+
+            repaired_main = repaired.app_root / "extensions" / "cursor-agent-exec" / "dist" / "main.js"
+            self.assertTrue(repaired_main.is_file())
+            self.assertFalse(repaired_main.is_symlink())
 
 
 if __name__ == "__main__":
