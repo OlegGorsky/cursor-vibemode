@@ -96,8 +96,10 @@ function Download-Repo {
     param([string]$Target)
     Enable-Tls12
     $zip = Join-Path $Target "repo.zip"
-    $url = "https://github.com/$Repo/archive/refs/heads/$Ref.zip"
-    Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+    $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $url = "https://github.com/$Repo/archive/refs/heads/$Ref.zip?v=$stamp"
+    $headers = @{ "Cache-Control" = "no-cache"; "Pragma" = "no-cache" }
+    Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -Headers $headers
     Expand-Archive -LiteralPath $zip -DestinationPath $Target -Force
     $dir = Get-ChildItem -LiteralPath $Target -Directory |
         Where-Object { $_.Name -like "cursor-vibemode-*" } |
@@ -186,9 +188,13 @@ models="$(decode '__MODELS_B64__')"
 base_url="$(decode '__BASE_URL_B64__')"
 db_path="$(decode '__DB_B64__')"
 tmp="$(mktemp -d)"
+cache_buster="$(date +%s)"
 trap 'rm -rf "$tmp"' EXIT
 
-curl -fsSL "https://github.com/${repo}/archive/refs/heads/${ref}.tar.gz" |
+curl -fsSL \
+  -H 'Cache-Control: no-cache' \
+  -H 'Pragma: no-cache' \
+  "https://github.com/${repo}/archive/refs/heads/${ref}.tar.gz?v=${cache_buster}" |
   tar -xz -C "$tmp" --strip-components=1
 
 export CURSOR_VIBEMODE_KEY="$api_key"

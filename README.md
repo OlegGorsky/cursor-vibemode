@@ -19,10 +19,22 @@ Linux, macOS или WSL:
 curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash
 ```
 
+Если GitHub отдал старую версию установщика:
+
+```bash
+curl -fsSL "https://github.com/OlegGorsky/cursor-vibemode/raw/main/i?$(date +%s)"|bash
+```
+
 Windows PowerShell:
 
 ```powershell
 irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1|iex
+```
+
+Если GitHub отдал старую версию установщика:
+
+```powershell
+irm "https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1?$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"|iex
 ```
 
 Windows-скрипт настраивает Cursor в Windows и автоматически пробует настроить
