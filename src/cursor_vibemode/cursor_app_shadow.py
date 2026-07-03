@@ -55,17 +55,20 @@ def create_shadow_cursor_app(source_app_root: Path) -> ShadowCursorApp | None:
 def existing_shadow_cursor_app(source_app_root: Path) -> ShadowCursorApp | None:
     dest_root = shadow_install_root(source_app_root)
     app_root = dest_root / "resources" / "app"
-    launcher = Path.home() / ".local" / "bin" / "cursor-vibemode"
-    if app_root.is_dir() and launcher.is_file():
-        return ShadowCursorApp(app_root, launcher, desktop_entry_path())
+    if app_root.is_dir():
+        launcher = write_launcher(dest_root)
+        desktop = write_desktop_entry(launcher)
+        return ShadowCursorApp(app_root, launcher, desktop)
     return None
 
 
 def shadow_launcher_for_app(app_root: Path) -> Path | None:
     if not is_inside(app_root, shadow_base_dir()):
         return None
-    launcher = Path.home() / ".local" / "bin" / "cursor-vibemode"
-    return launcher if launcher.is_file() else None
+    dest_root = app_root.parent.parent
+    launcher = write_launcher(dest_root)
+    write_desktop_entry(launcher)
+    return launcher
 
 
 def desktop_entry_path() -> Path:
@@ -118,13 +121,19 @@ def write_launcher(dest_root: Path) -> Path:
     launcher_dir = Path.home() / ".local" / "bin"
     launcher_dir.mkdir(parents=True, exist_ok=True)
     launcher = launcher_dir / "cursor-vibemode"
+    executable = cursor_entrypoint(dest_root)
     launcher.write_text(
         "#!/usr/bin/env sh\n"
-        f"exec {shell_quote(str(dest_root / 'cursor'))} \"$@\"\n",
+        f"exec {shell_quote(str(executable))} \"$@\"\n",
         encoding="utf-8",
     )
     launcher.chmod(0o755)
     return launcher
+
+
+def cursor_entrypoint(dest_root: Path) -> Path:
+    cli = dest_root / "bin" / "cursor"
+    return cli if cli.is_file() else dest_root / "cursor"
 
 
 def write_desktop_entry(launcher: Path) -> Path | None:

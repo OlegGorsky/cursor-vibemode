@@ -93,6 +93,8 @@ class CursorAppPatchTests(unittest.TestCase):
             app_root = source_root / "resources" / "app"
             source_root.mkdir(parents=True)
             (source_root / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
+            (source_root / "bin").mkdir()
+            (source_root / "bin" / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
             make_app(app_root)
             for rel in (
                 "product.json",
@@ -102,11 +104,15 @@ class CursorAppPatchTests(unittest.TestCase):
             ):
                 (app_root / rel).chmod(0o444)
 
-            with mock.patch.dict("os.environ", {"XDG_DATA_HOME": str(base / "xdg")}, clear=False):
+            home = base / "home"
+            env = {"HOME": str(home), "XDG_DATA_HOME": str(base / "xdg")}
+            with mock.patch.dict("os.environ", env, clear=False):
                 report = patch_cursor_app(str(app_root))
 
             self.assertIsNotNone(report.launcher)
             self.assertTrue(report.launcher and report.launcher.is_file())
+            self.assertTrue(str(report.launcher).startswith(str(home)))
+            self.assertIn("/bin/cursor", report.launcher.read_text(encoding="utf-8"))
             self.assertNotEqual(report.app_root, app_root)
             self.assertIn(LOCAL_MODE_DISABLED, (app_root / "out" / "main.js").read_text(encoding="utf-8"))
             self.assertIn(LOCAL_MODE_ENABLED, (report.app_root / "out" / "main.js").read_text(encoding="utf-8"))
