@@ -165,7 +165,9 @@ def prompt_new_key() -> KeyResult:
 
 
 def choose_existing_key(label: str, key: str) -> KeyResult:
-    answer = read_secret(f"{label}. Enter = использовать, r = заменить, или вставь новый ключ: ")
+    answer = read_secret(
+        f"{label}. Нажмите Enter, чтобы использовать его, или вставьте новый ключ: "
+    )
     if not answer:
         return KeyResult(key, label)
     if answer.lower() in {"r", "replace", "new", "n"}:
@@ -191,7 +193,7 @@ def resolve_api_key(
         if local and non_interactive:
             return KeyResult(local, str(local_auth_path()))
         if local:
-            return choose_existing_key("Сохраненный ключ cursor-vibemode найден", local)
+            return choose_existing_key("Ключ Vibemode уже сохранен", local)
         if cursor_key and non_interactive:
             return KeyResult(cursor_key, "Cursor")
         if cursor_key:

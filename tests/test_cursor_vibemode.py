@@ -162,6 +162,35 @@ class CursorVibemodeTests(unittest.TestCase):
         self.assertTrue(is_cloudflare_browser_block("browser_signature_banned"))
         self.assertFalse(is_cloudflare_browser_block("HTTP 401 unauthorized"))
 
+    def test_setup_reuses_saved_key_when_user_presses_enter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.vscdb"
+            make_db(db, {})
+            env = {"CURSOR_VIBEMODE_HOME": tmp}
+            args = Namespace(
+                replace_key=False,
+                key=None,
+                non_interactive=False,
+                base_url="https://api.vibemod.pro/v1",
+                models="gpt-5.4",
+                model="gpt-5.4",
+                no_backup=True,
+                no_save_key=True,
+                skip_api_check=True,
+                deep_api_check=False,
+            )
+
+            with mock.patch.dict(os.environ, env, clear=True):
+                save_local_key("sk-reused")
+                with mock.patch("cursor_vibemode.keys.read_secret", return_value=""):
+                    output = StringIO()
+                    with redirect_stdout(output):
+                        result = setup_cursor(args, db_path=db, title="setup")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_openai_key(db), "sk-reused")
+            self.assertIn("Настройка завершена", output.getvalue())
+
     def test_endpoint_routing_uses_responses_for_gpt_only(self) -> None:
         self.assertEqual(endpoint_for_model("gpt-5.4"), "responses")
         self.assertEqual(endpoint_for_model("GPT-5.4-mini"), "responses")
@@ -281,7 +310,7 @@ class CursorVibemodeTests(unittest.TestCase):
                     )
 
             self.assertEqual(result.value, "sk-local")
-            self.assertEqual(result.source, "Сохраненный ключ cursor-vibemode найден")
+            self.assertEqual(result.source, "Ключ Vibemode уже сохранен")
 
 
 if __name__ == "__main__":
