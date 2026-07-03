@@ -9,6 +9,7 @@ from .api import EndpointCheck, check_model_endpoints, check_models
 from .cursor_db import apply_setup, read_openai_key, read_status, set_openai_enabled
 from .errors import CursorVibemodeError
 from .keys import resolve_api_key, save_local_key
+from .models import provider_model_id
 from .paths import DEFAULT_BASE_URL, VIBEMODE_MODELS
 from .surfaces import detect_surfaces
 from .url_safety import host_warnings
@@ -27,7 +28,11 @@ def parse_model_list(value: str | None, api_models: list[str] | None = None) -> 
         return list(VIBEMODE_MODELS)
     if value.lower() == "builtin":
         return list(VIBEMODE_MODELS)
-    models = [item.strip() for item in value.split(",") if item.strip()]
+    models = list(
+        dict.fromkeys(
+            provider_model_id(item.strip()) for item in value.split(",") if item.strip()
+        )
+    )
     return models or list(VIBEMODE_MODELS)
 
 
@@ -63,11 +68,12 @@ def setup_cursor(
 
     catalog = fetch_api_models(args, base_url, result.value, warnings)
     models = parse_model_list(args.models, catalog.models)
+    selected_model = provider_model_id(args.model)
     backups = apply_setup(
         db_path,
         api_key=result.value,
         base_url=base_url,
-        model_id=args.model,
+        model_id=selected_model,
         model_ids=models,
         backup=not args.no_backup,
     )
@@ -78,7 +84,7 @@ def setup_cursor(
     print_setup_result(
         title,
         surfaces_after if surfaces_after.has_settings else surfaces_before,
-        args.model,
+        selected_model,
         models,
         len(backups),
         warnings,

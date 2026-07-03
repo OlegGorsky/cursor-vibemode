@@ -21,6 +21,7 @@ from cursor_vibemode.cursor_db import (
     set_openai_enabled,
 )
 from cursor_vibemode.keys import resolve_api_key, save_local_key
+from cursor_vibemode.models import cursor_model_id
 from cursor_vibemode.operations import is_cloudflare_browser_block, parse_model_list, setup_cursor
 from cursor_vibemode.paths import APP_USER_KEY, MARKER_KEY, OPENAI_KEY_STORAGE
 from cursor_vibemode.surfaces import detect_surfaces
@@ -57,12 +58,30 @@ class CursorVibemodeTests(unittest.TestCase):
             )
 
             status = read_status(db)
+            alias = cursor_model_id("gpt-5.5")
             self.assertTrue(status.has_key)
             self.assertTrue(status.use_openai_key)
             self.assertEqual(status.base_url, "https://api.vibemod.pro/v1")
             self.assertEqual(status.composer_model, "gpt-5.4")
             self.assertIn("gpt-5.5", status.registered_models)
             self.assertEqual(read_openai_key(db), "sk-test-123456")
+
+            conn = sqlite3.connect(db)
+            try:
+                app_user = json.loads(
+                    conn.execute(
+                        "SELECT value FROM ItemTable WHERE key=?", (APP_USER_KEY,)
+                    ).fetchone()[0]
+                )
+            finally:
+                conn.close()
+            catalog = {
+                item["name"]: item
+                for item in app_user["availableDefaultModels2"]
+                if isinstance(item, dict) and item.get("name")
+            }
+            self.assertEqual(catalog[alias]["serverModelName"], "gpt-5.5")
+            self.assertEqual(catalog[alias]["clientDisplayName"], "GPT-5.5 [Vibemode]")
 
     def test_setup_updates_unknown_model_config_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,8 +118,81 @@ class CursorVibemodeTests(unittest.TestCase):
                 conn.close()
 
             future_mode = app_user["aiSettings"]["modelConfig"]["future-agent-window"]
-            self.assertEqual(future_mode["modelName"], "gpt-5.4")
-            self.assertEqual(future_mode["selectedModels"][0]["modelId"], "gpt-5.4")
+            self.assertEqual(future_mode["modelName"], cursor_model_id("gpt-5.4"))
+            self.assertEqual(
+                future_mode["selectedModels"][0]["modelId"],
+                cursor_model_id("gpt-5.4"),
+            )
+
+    def test_setup_uses_cursor_alias_for_native_model_collision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.vscdb"
+            native_gpt = {
+                "name": "gpt-5.5",
+                "serverModelName": "gpt-5.5",
+                "clientDisplayName": "GPT-5.5",
+                "vendor": {"id": 2, "displayName": "OpenAI"},
+            }
+            old_custom = {
+                "name": "deepseek-v4-pro",
+                "serverModelName": "deepseek-v4-pro",
+                "isUserAdded": True,
+            }
+            make_db(
+                db,
+                {
+                    "aiSettings": {
+                        "modelConfig": {"composer": {}},
+                        "userAddedModels": ["gpt-5.5", "deepseek-v4-pro"],
+                        "modelOverrideEnabled": ["gpt-5.5", "deepseek-v4-pro"],
+                    },
+                    "availableDefaultModels2": [native_gpt, old_custom],
+                },
+            )
+
+            apply_setup(
+                db,
+                api_key="sk-test",
+                base_url="https://api.vibemod.pro/v1",
+                model_id="gpt-5.5",
+                model_ids=["gpt-5.5", "deepseek-v4-pro"],
+                backup=False,
+            )
+
+            conn = sqlite3.connect(db)
+            try:
+                app_user = json.loads(
+                    conn.execute(
+                        "SELECT value FROM ItemTable WHERE key=?", (APP_USER_KEY,)
+                    ).fetchone()[0]
+                )
+            finally:
+                conn.close()
+
+            gpt_alias = cursor_model_id("gpt-5.5")
+            deepseek_alias = cursor_model_id("deepseek-v4-pro")
+            catalog = {
+                item["name"]: item
+                for item in app_user["availableDefaultModels2"]
+                if isinstance(item, dict) and item.get("name")
+            }
+            self.assertIn("gpt-5.5", catalog)
+            self.assertEqual(catalog["gpt-5.5"]["clientDisplayName"], "GPT-5.5")
+            self.assertEqual(catalog[gpt_alias]["serverModelName"], "gpt-5.5")
+            self.assertTrue(catalog[gpt_alias]["isUserAdded"])
+            self.assertNotIn("deepseek-v4-pro", catalog)
+            self.assertIn(deepseek_alias, catalog)
+            self.assertEqual(app_user["composerModel"], gpt_alias)
+            self.assertEqual(
+                app_user["aiSettings"]["modelConfig"]["composer"]["selectedModels"][0][
+                    "modelId"
+                ],
+                gpt_alias,
+            )
+            self.assertNotIn("gpt-5.5", app_user["aiSettings"]["userAddedModels"])
+            self.assertNotIn("deepseek-v4-pro", app_user["aiSettings"]["userAddedModels"])
+            self.assertIn(gpt_alias, app_user["aiSettings"]["userAddedModels"])
+            self.assertIn(deepseek_alias, app_user["aiSettings"]["userAddedModels"])
 
     def test_detects_editor_and_agent_window_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,6 +218,8 @@ class CursorVibemodeTests(unittest.TestCase):
         models = parse_model_list(None, ["gpt-5.4", "deepseek-v4-pro", "gpt-5.4"])
 
         self.assertEqual(models, ["gpt-5.4", "deepseek-v4-pro"])
+        self.assertEqual(parse_model_list("vibemode-gpt-5.5"), ["gpt-5.5"])
+        self.assertEqual(parse_model_list("gpt-5.5,vibemode-gpt-5.5"), ["gpt-5.5"])
 
     def test_cloudflare_catalog_block_falls_back_during_setup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

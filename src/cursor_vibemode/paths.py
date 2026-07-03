@@ -25,31 +25,37 @@ AGENT_MODES = (
 )
 
 VIBEMODE_MODELS = (
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "glm-5.1",
+    "glm-5.2",
     "gpt-5.4",
     "gpt-5.4-mini",
     "gpt-5.5",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
-    "glm-5.1",
     "kimi-k2.6",
+    "mimo-v2.5",
+    "mimo-v2.5-pro",
     "minimax-m3",
     "qwen3.7-max",
     "qwen3.7-plus",
-    "vibe-lite-1",
+    "vibe-lite-1.5",
 )
 
 MODEL_LABELS = {
+    "deepseek-v4-flash": "DeepSeek V4 Flash [Vibemode]",
+    "deepseek-v4-pro": "DeepSeek V4 Pro [Vibemode]",
+    "glm-5.1": "GLM 5.1 [Vibemode]",
+    "glm-5.2": "GLM 5.2 [Vibemode]",
     "gpt-5.4": "GPT-5.4 [Vibemode]",
     "gpt-5.4-mini": "GPT-5.4 Mini [Vibemode]",
     "gpt-5.5": "GPT-5.5 [Vibemode]",
-    "deepseek-v4-pro": "DeepSeek V4 Pro [Vibemode]",
-    "deepseek-v4-flash": "DeepSeek V4 Flash [Vibemode]",
-    "glm-5.1": "GLM 5.1 [Vibemode]",
     "kimi-k2.6": "Kimi K2.6 [Vibemode]",
+    "mimo-v2.5": "MiMo V2.5 [Vibemode]",
+    "mimo-v2.5-pro": "MiMo V2.5 Pro [Vibemode]",
     "minimax-m3": "MiniMax M3 [Vibemode]",
     "qwen3.7-max": "Qwen 3.7 Max [Vibemode]",
     "qwen3.7-plus": "Qwen 3.7 Plus [Vibemode]",
-    "vibe-lite-1": "Vibe Lite 1 [Vibemode]",
+    "vibe-lite-1.5": "Vibe Lite 1.5 [Vibemode]",
 }
 
 

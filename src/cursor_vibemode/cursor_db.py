@@ -10,10 +10,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .models import (
+    catalog_provider_model_id,
+    cursor_model_id,
+    model_catalog_entry,
+    provider_model_id,
+)
 from .paths import (
     APP_USER_KEY,
     MARKER_KEY,
-    MODEL_LABELS,
     OPENAI_KEY_STORAGE,
     VIBEMODE_MODELS,
 )
@@ -112,66 +117,29 @@ def touch_marker(conn: sqlite3.Connection, keys: list[str]) -> None:
         write_json_value(conn, MARKER_KEY, marker)
 
 
-def display_name(model_id: str) -> str:
-    return MODEL_LABELS.get(model_id, model_id)
-
-
-def model_variant(model_id: str) -> dict[str, Any]:
-    label = display_name(model_id)
-    return {
-        "parameterValues": [],
-        "displayName": label,
-        "isMaxMode": False,
-        "isDefaultMaxConfig": True,
-        "isDefaultNonMaxConfig": True,
-        "displayNameOutsidePicker": label,
-        "variantStringRepresentation": f"{model_id}[]",
-        "legacySlug": model_id,
-    }
-
-
-def model_catalog_entry(model_id: str, template: dict[str, Any] | None) -> dict[str, Any]:
-    entry = dict(template or {})
-    entry.update(
-        {
-            "name": model_id,
-            "serverModelName": model_id,
-            "clientDisplayName": display_name(model_id),
-            "inputboxShortModelName": display_name(model_id),
-            "displayNameOutsidePicker": display_name(model_id),
-            "variants": [model_variant(model_id)],
-            "vendorName": "openai",
-            "vendor": {"id": 0, "displayName": "OpenAI"},
-            "isUserAdded": True,
-            "defaultOn": False,
-            "parameterDefinitions": entry.get("parameterDefinitions") or [],
-            "legacySlugs": entry.get("legacySlugs") or [],
-            "idAliases": entry.get("idAliases") or [],
-            "supportsAgent": True,
-            "supportsPlanMode": True,
-            "supportsImages": True,
-            "supportsThinking": True,
-            "supportsMaxMode": True,
-            "supportsNonMaxMode": True,
-        }
-    )
-    return entry
-
-
 def register_models(data: dict[str, Any], model_ids: list[str]) -> None:
+    provider_ids = list(dict.fromkeys(provider_model_id(model_id) for model_id in model_ids))
+    cursor_ids = [cursor_model_id(model_id) for model_id in provider_ids]
     ai_settings = data.setdefault("aiSettings", {})
     for key in ("userAddedModels", "modelOverrideEnabled"):
-        current = list(ai_settings.get(key) or [])
-        for model_id in model_ids:
+        current = [item for item in list(ai_settings.get(key) or []) if item not in provider_ids]
+        for model_id in cursor_ids:
             if model_id not in current:
                 current.append(model_id)
         ai_settings[key] = current
 
     catalog = list(data.get("availableDefaultModels2") or [])
-    by_name = {m.get("name"): m for m in catalog if isinstance(m, dict)}
-    template = next((m for m in catalog if isinstance(m, dict)), None)
-    for model_id in model_ids:
-        by_name[model_id] = model_catalog_entry(model_id, by_name.get(model_id) or template)
+    by_name = {}
+    for item in catalog:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if name in provider_ids and item.get("isUserAdded") is True:
+            continue
+        by_name[name] = item
+    for model_id in provider_ids:
+        alias = cursor_model_id(model_id)
+        by_name[alias] = model_catalog_entry(model_id, by_name.get(alias))
     data["availableDefaultModels2"] = list(by_name.values())
 
 
@@ -197,10 +165,11 @@ def patch_application_user(
     model_id: str,
     model_ids: list[str],
 ) -> dict[str, Any]:
+    provider_id = provider_model_id(model_id)
     data["openAIBaseUrl"] = base_url.rstrip("/")
     data["useOpenAIKey"] = True
     register_models(data, model_ids)
-    set_default_model(data, model_id)
+    set_default_model(data, cursor_model_id(provider_id))
     return data
 
 
@@ -212,14 +181,21 @@ def read_status(db_path: Path) -> CursorStatus:
             return CursorStatus(db_path, False, False, None, "", "", [])
         app_user = read_json_value(conn, APP_USER_KEY)
         catalog = app_user.get("availableDefaultModels2") or []
-        models = [m.get("name") for m in catalog if isinstance(m, dict) and m.get("name")]
+        models = []
+        for item in catalog:
+            if not isinstance(item, dict):
+                continue
+            model_id = catalog_provider_model_id(item)
+            if model_id:
+                models.append(model_id)
+        composer_model = str(app_user.get("composerModel") or "")
         return CursorStatus(
             db_path=db_path,
             has_item_table=True,
             has_key=bool(get_value(conn, OPENAI_KEY_STORAGE)),
             use_openai_key=app_user.get("useOpenAIKey"),
             base_url=str(app_user.get("openAIBaseUrl") or ""),
-            composer_model=str(app_user.get("composerModel") or ""),
+            composer_model=provider_model_id(composer_model),
             registered_models=models,
         )
 
@@ -247,13 +223,18 @@ def apply_setup(
         if not has_item_table(conn):
             raise RuntimeError(f"ItemTable not found in {db_path}")
         app_user = read_json_value(conn, APP_USER_KEY)
-        models = model_ids or list(VIBEMODE_MODELS)
-        if model_id not in models:
-            models.insert(0, model_id)
+        selected_model = provider_model_id(model_id)
+        models = list(
+            dict.fromkeys(
+                provider_model_id(model) for model in (model_ids or list(VIBEMODE_MODELS))
+            )
+        )
+        if selected_model not in models:
+            models.insert(0, selected_model)
         app_user = patch_application_user(
             app_user,
             base_url=base_url,
-            model_id=model_id,
+            model_id=selected_model,
             model_ids=models,
         )
         write_json_value(conn, APP_USER_KEY, app_user)
