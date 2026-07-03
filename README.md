@@ -16,7 +16,7 @@ API. Скрипт патчит реальное хранилище Cursor `state
 Linux, macOS или WSL:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash
+curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash
 ```
 
 Windows PowerShell:
@@ -140,26 +140,26 @@ $env:CURSOR_VIBEMODE_DEEP_API_CHECK='1'; irm https://raw.githubusercontent.com/O
 Пропустить проверку API:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --skip-api-check
+curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash -s -- --skip-api-check
 ```
 
 Запустить глубокую endpoint-проверку:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --deep-api-check
+curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash -s -- --deep-api-check
 ```
 
 Указать путь к Cursor DB вручную:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --db ~/.config/Cursor/User/globalStorage/state.vscdb
+curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash -s -- --db ~/.config/Cursor/User/globalStorage/state.vscdb
 ```
 
 Автоматический запуск без prompt:
 
 ```bash
 export CURSOR_VIBEMODE_KEY=sk-...
-curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --non-interactive
+curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash -s -- --non-interactive
 unset CURSOR_VIBEMODE_KEY
 ```
 
