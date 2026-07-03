@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from .paths import (
-    AGENT_MODES,
     APP_USER_KEY,
     MARKER_KEY,
     MODEL_LABELS,
@@ -169,8 +168,7 @@ def set_default_model(data: dict[str, Any], model_id: str) -> None:
     selected = [{"modelId": model_id, "parameters": []}]
     model_config = ai_settings.get("modelConfig")
     if isinstance(model_config, dict):
-        for mode in AGENT_MODES:
-            item = model_config.get(mode)
+        for item in model_config.values():
             if isinstance(item, dict):
                 item["modelName"] = model_id
                 item["selectedModels"] = selected

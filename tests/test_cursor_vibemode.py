@@ -19,6 +19,7 @@ from cursor_vibemode.cursor_db import (
 from cursor_vibemode.keys import resolve_api_key, save_local_key
 from cursor_vibemode.operations import parse_model_list
 from cursor_vibemode.paths import APP_USER_KEY, MARKER_KEY, OPENAI_KEY_STORAGE
+from cursor_vibemode.surfaces import detect_surfaces
 from cursor_vibemode.url_safety import host_warnings, is_private_host
 
 
@@ -58,6 +59,64 @@ class CursorVibemodeTests(unittest.TestCase):
             self.assertEqual(status.composer_model, "gpt-5.4")
             self.assertIn("gpt-5.5", status.registered_models)
             self.assertEqual(read_openai_key(db), "sk-test-123456")
+
+    def test_setup_updates_unknown_model_config_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.vscdb"
+            make_db(
+                db,
+                {
+                    "aiSettings": {
+                        "modelConfig": {
+                            "composer": {},
+                            "future-agent-window": {},
+                        }
+                    }
+                },
+            )
+
+            apply_setup(
+                db,
+                api_key="sk-test",
+                base_url="https://example.com/v1",
+                model_id="gpt-5.4",
+                model_ids=["gpt-5.4"],
+                backup=False,
+            )
+
+            conn = sqlite3.connect(db)
+            try:
+                app_user = json.loads(
+                    conn.execute(
+                        "SELECT value FROM ItemTable WHERE key=?", (APP_USER_KEY,)
+                    ).fetchone()[0]
+                )
+            finally:
+                conn.close()
+
+            future_mode = app_user["aiSettings"]["modelConfig"]["future-agent-window"]
+            self.assertEqual(future_mode["modelName"], "gpt-5.4")
+            self.assertEqual(future_mode["selectedModels"][0]["modelId"], "gpt-5.4")
+
+    def test_detects_editor_and_agent_window_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.vscdb"
+            make_db(db, {})
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute(
+                    "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
+                    ("glass.localAgentProjects.v1", "{}"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            report = detect_surfaces(db)
+
+            self.assertTrue(report.has_editor)
+            self.assertTrue(report.has_agents)
+            self.assertEqual(report.display, "редактор и агентное окно")
 
     def test_auto_model_list_prefers_api_models(self) -> None:
         models = parse_model_list(None, ["gpt-5.4", "deepseek-v4-pro", "gpt-5.4"])
@@ -183,7 +242,7 @@ class CursorVibemodeTests(unittest.TestCase):
                     )
 
             self.assertEqual(result.value, "sk-local")
-            self.assertEqual(result.source, "Saved cursor-vibemode key found")
+            self.assertEqual(result.source, "Сохраненный ключ cursor-vibemode найден")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from io import TextIOWrapper
 from pathlib import Path
 
+from .errors import CursorVibemodeError
 from .paths import local_auth_path
 
 
@@ -152,14 +153,19 @@ def open_tty_stdin() -> TextIOWrapper:
 
 
 def prompt_new_key() -> KeyResult:
-    key = read_secret("Paste Vibemode API key: ")
+    key = read_secret("Вставь Vibemode API key: ")
     if not key:
-        raise RuntimeError("API key not provided")
+        raise CursorVibemodeError(
+            "API_KEY_MISSING",
+            "ключ Vibemode не введен",
+            "Терминал получил пустой ключ.",
+            "запусти setup еще раз и вставь ключ.",
+        )
     return KeyResult(key, "prompt")
 
 
 def choose_existing_key(label: str, key: str) -> KeyResult:
-    answer = read_secret(f"{label}. Enter = use, r = replace, or paste new key: ")
+    answer = read_secret(f"{label}. Enter = использовать, r = заменить, или вставь новый ключ: ")
     if not answer:
         return KeyResult(key, label)
     if answer.lower() in {"r", "replace", "new", "n"}:
@@ -185,12 +191,17 @@ def resolve_api_key(
         if local and non_interactive:
             return KeyResult(local, str(local_auth_path()))
         if local:
-            return choose_existing_key("Saved cursor-vibemode key found", local)
+            return choose_existing_key("Сохраненный ключ cursor-vibemode найден", local)
         if cursor_key and non_interactive:
-            return KeyResult(cursor_key, "Cursor state.vscdb")
+            return KeyResult(cursor_key, "Cursor")
         if cursor_key:
-            return choose_existing_key("Cursor OpenAI key found", cursor_key)
+            return choose_existing_key("Ключ Cursor найден", cursor_key)
 
     if non_interactive:
-        raise RuntimeError("API key not found. Set CURSOR_VIBEMODE_KEY or pass --key.")
+        raise CursorVibemodeError(
+            "API_KEY_MISSING",
+            "ключ Vibemode не найден",
+            "Ключ не передан через --key, CURSOR_VIBEMODE_KEY или сохраненный cache.",
+            "запусти setup без --non-interactive и вставь ключ в терминале.",
+        )
     return prompt_new_key()

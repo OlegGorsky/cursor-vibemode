@@ -5,8 +5,8 @@ from urllib.parse import urlparse
 
 
 PRIVATE_HOST_MESSAGE = (
-    "Cursor can block private or localhost Override OpenAI Base URL values. "
-    "Use a public HTTPS tunnel if Cursor cannot reach this endpoint."
+    "адрес API выглядит локальным или приватным; Cursor может его блокировать. "
+    "Если подключение не заработает, нужен публичный HTTPS-туннель."
 )
 
 
@@ -17,7 +17,7 @@ def host_warnings(base_url: str) -> list[str]:
         return ["Base URL has no host."]
     warnings: list[str] = []
     if parsed.scheme != "https":
-        warnings.append("Base URL is not HTTPS; Cursor may reject or block it.")
+        warnings.append("адрес API не HTTPS; Cursor может отклонить такое подключение.")
     if is_private_host(host):
         warnings.append(PRIVATE_HOST_MESSAGE)
     return warnings

@@ -239,7 +239,7 @@ try {
 
     if (-not $NoWindows) {
         if ($windowsDb -and (Test-Path -LiteralPath $windowsDb)) {
-            Log "Настраиваю Cursor в Windows: $windowsDb"
+            Log "Настраиваю Cursor в Windows"
             Invoke-CursorSetup $root $windowsDb $apiKey
             $didWork = $true
         } else {

@@ -9,17 +9,18 @@ from .cursor_db import (
     remove_openai_key,
     set_openai_enabled,
 )
+from .errors import CursorVibemodeError, format_error
 from .keys import remove_local_key
 from .operations import setup_cursor, verify_api, watch_openai_key
 from .paths import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
-    VIBEMODE_MODELS,
     candidate_db_paths,
     cursor_processes,
     find_cursor_db,
     local_auth_path,
 )
+from .surfaces import detect_surfaces
 from .url_safety import host_warnings
 
 
@@ -30,36 +31,41 @@ def require_db(path: str | None) -> Path:
     checked = "\n".join(f"  - {p}" for p in candidate_db_paths())
     if path:
         checked = f"  - {Path(path).expanduser()}"
-    raise RuntimeError(f"Cursor state.vscdb not found. Checked:\n{checked}")
+    raise CursorVibemodeError(
+        "CURSOR_DB_NOT_FOUND",
+        "профиль Cursor не найден",
+        "Cursor еще не создал локальную базу настроек или путь указан неверно.",
+        "открой Cursor хотя бы один раз, полностью закрой его и повтори запуск.",
+        f"Проверенные пути:\n{checked}",
+    )
 
 
 def ensure_cursor_closed(force: bool) -> None:
     running = cursor_processes()
     if running and not force:
         joined = ", ".join(running)
-        raise RuntimeError(
-            "Cursor appears to be running. Close it fully first, or pass --force. "
-            f"Processes: {joined}"
+        raise CursorVibemodeError(
+            "CURSOR_IS_RUNNING",
+            "Cursor сейчас открыт",
+            "База настроек может быть заблокирована или перезаписана самим Cursor.",
+            "полностью закрой Cursor и повтори запуск.",
+            f"Процессы: {joined}",
         )
 
 
 def print_status(db_path: Path) -> int:
     status = read_status(db_path)
-    print(f"db: {status.db_path}")
-    print(f"ItemTable: {'yes' if status.has_item_table else 'no'}")
-    print(f"OpenAI key: {'saved' if status.has_key else 'missing'}")
-    print(f"useOpenAIKey: {status.use_openai_key}")
-    print(f"openAIBaseUrl: {status.base_url or 'missing'}")
+    surfaces = detect_surfaces(db_path)
+    ready = bool(status.has_key and status.use_openai_key and status.base_url)
+    print("Статус Cursor Vibemode")
+    print(f"Подключение: {'включено' if ready else 'не завершено'}")
+    print(f"Подключено для: {surfaces.display}")
+    print(f"Моделей подключено: {len(status.registered_models)}")
+    if status.composer_model:
+        print(f"Основная модель: {status.composer_model}")
     for warning in host_warnings(status.base_url):
         if status.base_url:
-            print(f"warning: {warning}")
-    print(f"composerModel: {status.composer_model or 'missing'}")
-    visible = [m for m in status.registered_models if m in VIBEMODE_MODELS]
-    print(f"vibemode models: {', '.join(visible) if visible else 'missing'}")
-    print(f"registered models: {len(status.registered_models)}")
-    shown = ", ".join(status.registered_models[:12])
-    if shown:
-        print(f"registered sample: {shown}{'...' if len(status.registered_models) > 12 else ''}")
+            print(f"Предупреждение: {warning}")
     return 0 if status.has_item_table else 2
 
 
@@ -70,30 +76,34 @@ def command_status(args: argparse.Namespace) -> int:
 
 def command_doctor(args: argparse.Namespace) -> int:
     db_path = find_cursor_db(args.db)
-    print("cursor-vibemode doctor")
-    print(f"local auth: {local_auth_path()}")
-    print(f"Cursor processes: {', '.join(cursor_processes()) or 'none'}")
-    print("Candidate DB paths:")
-    for path in candidate_db_paths():
-        print(f"  - {path} {'[found]' if path.is_file() else '[missing]'}")
+    print("Диагностика Cursor Vibemode")
+    print(f"Процессы Cursor: {', '.join(cursor_processes()) or 'не найдены'}")
     if db_path:
+        code = print_status(db_path)
         print("")
-        return print_status(db_path)
+        print("Для разработчика:")
+        print(f"- база Cursor: {db_path}")
+        print(f"- локальный cache ключа: {local_auth_path()}")
+        return code
+    print("Подключение: не завершено")
+    print("Причина: профиль Cursor не найден")
     print("")
-    print("Cursor DB not found. Install and open Cursor once, then run setup again.")
+    print("Для разработчика:")
+    for path in candidate_db_paths():
+        print(f"- {path}: {'найден' if path.is_file() else 'нет'}")
     return 2
 
 
 def command_setup(args: argparse.Namespace) -> int:
     db_path = require_db(args.db)
     ensure_cursor_closed(args.force)
-    return setup_cursor(args, db_path=db_path, title="db patched")
+    return setup_cursor(args, db_path=db_path, title="setup")
 
 
 def command_repair(args: argparse.Namespace) -> int:
     db_path = require_db(args.db)
     ensure_cursor_closed(args.force)
-    return setup_cursor(args, db_path=db_path, title="db repaired")
+    return setup_cursor(args, db_path=db_path, title="repaired")
 
 
 def command_verify(args: argparse.Namespace) -> int:
@@ -105,9 +115,9 @@ def command_enable(args: argparse.Namespace) -> int:
     db_path = require_db(args.db)
     ensure_cursor_closed(args.force)
     backups = set_openai_enabled(db_path, True, backup=not args.no_backup)
-    print(f"OpenAI BYOK enabled in {db_path}")
-    for backup in backups:
-        print(f"backup: {backup}")
+    print("Vibemode включен для Cursor.")
+    if backups:
+        print("Резервная копия: создана")
     return 0
 
 
@@ -115,9 +125,9 @@ def command_disable(args: argparse.Namespace) -> int:
     db_path = require_db(args.db)
     ensure_cursor_closed(args.force)
     backups = set_openai_enabled(db_path, False, backup=not args.no_backup)
-    print(f"OpenAI BYOK disabled in {db_path}")
-    for backup in backups:
-        print(f"backup: {backup}")
+    print("Vibemode выключен. Ключ и модели сохранены.")
+    if backups:
+        print("Резервная копия: создана")
     return 0
 
 
@@ -127,9 +137,9 @@ def command_toggle(args: argparse.Namespace) -> int:
     status = read_status(db_path)
     enabled = not bool(status.use_openai_key)
     backups = set_openai_enabled(db_path, enabled, backup=not args.no_backup)
-    print(f"OpenAI BYOK {'enabled' if enabled else 'disabled'} in {db_path}")
-    for backup in backups:
-        print(f"backup: {backup}")
+    print(f"Vibemode {'включен' if enabled else 'выключен'} для Cursor.")
+    if backups:
+        print("Резервная копия: создана")
     return 0
 
 
@@ -143,94 +153,94 @@ def command_remove(args: argparse.Namespace) -> int:
     ensure_cursor_closed(args.force)
     backups = remove_openai_key(db_path, backup=not args.no_backup)
     removed_local = remove_local_key() if args.forget_key else False
-    print(f"OpenAI BYOK removed from {db_path}")
-    print(f"local key removed: {'yes' if removed_local else 'no'}")
-    for backup in backups:
-        print(f"backup: {backup}")
+    print("Vibemode удален из Cursor.")
+    print(f"Локальный ключ: {'удален' if removed_local else 'не менялся'}")
+    if backups:
+        print("Резервная копия: создана")
     return 0
 
 
 def add_common_db_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--db", help="Path to Cursor User/globalStorage/state.vscdb")
+    parser.add_argument("--db", help="путь к профилю Cursor, если автоопределение не сработало")
 
 
 def add_write_safety_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--force", action="store_true", help="Write even if Cursor is running")
-    parser.add_argument("--no-backup", action="store_true", help="Do not backup state.vscdb")
+    parser.add_argument("--force", action="store_true", help="записать настройки, даже если Cursor открыт")
+    parser.add_argument("--no-backup", action="store_true", help="не создавать резервную копию")
 
 
 def add_setup_args(parser: argparse.ArgumentParser) -> None:
     add_common_db_args(parser)
     add_write_safety_args(parser)
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="адрес Vibemode API")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="основная модель")
     parser.add_argument(
         "--models",
-        help="auto, builtin, or comma-separated model IDs. Default: auto from /models.",
+        help="auto, builtin или список model ID через запятую",
     )
-    parser.add_argument("--key", help="API key for automation. Default setup prompts.")
-    parser.add_argument("--replace-key", action="store_true")
-    parser.add_argument("--non-interactive", action="store_true")
-    parser.add_argument("--skip-api-check", action="store_true")
-    parser.add_argument("--deep-api-check", action="store_true")
-    parser.add_argument("--no-save-key", action="store_true")
+    parser.add_argument("--key", help="ключ Vibemode для автоматического запуска")
+    parser.add_argument("--replace-key", action="store_true", help="заменить сохраненный ключ")
+    parser.add_argument("--non-interactive", action="store_true", help="не спрашивать ключ в терминале")
+    parser.add_argument("--skip-api-check", action="store_true", help="не проверять API")
+    parser.add_argument("--deep-api-check", action="store_true", help="проверить каждую модель коротким запросом")
+    parser.add_argument("--no-save-key", action="store_true", help="не сохранять ключ в локальный cache")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="cursor-vibemode")
+    parser = argparse.ArgumentParser(prog="cursor-vibemode", description="Подключение Vibemode к Cursor")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    doctor = sub.add_parser("doctor", help="Show Cursor path diagnostics")
+    doctor = sub.add_parser("doctor", help="Показать диагностику Cursor")
     add_common_db_args(doctor)
     doctor.set_defaults(func=command_doctor)
 
-    status = sub.add_parser("status", help="Inspect Cursor BYOK state")
+    status = sub.add_parser("status", help="Показать состояние подключения")
     add_common_db_args(status)
     status.set_defaults(func=command_status)
 
-    setup = sub.add_parser("setup", help="Patch Cursor for Vibemode BYOK")
+    setup = sub.add_parser("setup", help="Подключить Vibemode к Cursor")
     add_setup_args(setup)
     setup.set_defaults(func=command_setup)
 
-    repair = sub.add_parser("repair", help="Re-apply key, base URL, toggle, labels, and models")
+    repair = sub.add_parser("repair", help="Восстановить подключение Vibemode")
     add_setup_args(repair)
     repair.set_defaults(func=command_repair)
 
-    verify = sub.add_parser("verify", help="Check /models and endpoint compatibility")
+    verify = sub.add_parser("verify", help="Проверить API и модели")
     add_common_db_args(verify)
     verify.add_argument("--base-url")
-    verify.add_argument("--models", help="auto, builtin, or comma-separated model IDs")
-    verify.add_argument("--key", help="API key. Default: read from Cursor DB.")
-    verify.add_argument("--models-only", action="store_true", help="Only check /models")
+    verify.add_argument("--models", help="auto, builtin или список model ID через запятую")
+    verify.add_argument("--key", help="ключ Vibemode; по умолчанию читается из Cursor")
+    verify.add_argument("--models-only", action="store_true", help="проверить только каталог моделей")
     verify.set_defaults(func=command_verify)
 
-    enable = sub.add_parser("enable", help="Set useOpenAIKey=true")
+    enable = sub.add_parser("enable", help="Включить Vibemode")
     add_common_db_args(enable)
     add_write_safety_args(enable)
     enable.set_defaults(func=command_enable)
 
-    disable = sub.add_parser("disable", help="Set useOpenAIKey=false")
+    disable = sub.add_parser("disable", help="Выключить Vibemode")
     add_common_db_args(disable)
     add_write_safety_args(disable)
     disable.set_defaults(func=command_disable)
 
-    toggle = sub.add_parser("toggle", help="Toggle useOpenAIKey")
+    toggle = sub.add_parser("toggle", help="Переключить Vibemode")
     add_common_db_args(toggle)
     add_write_safety_args(toggle)
     toggle.set_defaults(func=command_toggle)
 
-    watch = sub.add_parser("watch", help="Keep useOpenAIKey=true if Cursor resets it")
+    watch = sub.add_parser("watch", help="Следить, чтобы Cursor не выключал Vibemode")
     add_common_db_args(watch)
-    watch.add_argument("--interval", type=int, default=30)
-    watch.add_argument("--count", type=int, default=0)
-    watch.add_argument("--once", action="store_true")
-    watch.add_argument("--verbose", action="store_true")
+    watch.add_argument("--interval", type=int, default=30, help="интервал проверки в секундах")
+    watch.add_argument("--count", type=int, default=0, help="сколько проверок выполнить")
+    watch.add_argument("--once", action="store_true", help="проверить один раз и выйти")
+    watch.add_argument("--verbose", action="store_true", help="показывать каждую проверку")
     watch.set_defaults(func=command_watch)
 
-    remove = sub.add_parser("remove", help="Disable BYOK and delete Cursor key")
+    remove = sub.add_parser("remove", help="Удалить подключение Vibemode")
     add_common_db_args(remove)
     add_write_safety_args(remove)
-    remove.add_argument("--forget-key", action="store_true")
+    remove.add_argument("--forget-key", action="store_true", help="удалить локально сохраненный ключ")
     remove.set_defaults(func=command_remove)
 
     return parser
@@ -244,6 +254,16 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("Cancelled", file=sys.stderr)
         return 130
+    except CursorVibemodeError as error:
+        print(format_error(error), file=sys.stderr)
+        return 1
     except Exception as error:
-        print(f"error: {error}", file=sys.stderr)
+        wrapped = CursorVibemodeError(
+            "UNEXPECTED_ERROR",
+            "неожиданная ошибка",
+            "Скрипт остановился на необработанном исключении.",
+            "передай этот вывод разработчику.",
+            repr(error),
+        )
+        print(format_error(wrapped), file=sys.stderr)
         return 1
