@@ -82,6 +82,7 @@ def candidate_db_paths() -> list[Path]:
         paths.append(Path(os.environ["CURSOR_DB"]).expanduser())
     for root in cursor_config_roots():
         paths.append(root / "User" / "globalStorage" / "state.vscdb")
+    paths.extend(wsl_windows_cursor_db_paths())
     seen: set[Path] = set()
     result: list[Path] = []
     for path in paths:
@@ -90,6 +91,67 @@ def candidate_db_paths() -> list[Path]:
             seen.add(path)
             result.append(path)
     return result
+
+
+def is_wsl() -> bool:
+    if sys.platform != "linux":
+        return False
+    try:
+        version = Path("/proc/version").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return "microsoft" in version.lower() or "wsl" in version.lower()
+
+
+def wsl_windows_cursor_db_paths() -> list[Path]:
+    if not is_wsl():
+        return []
+    paths: list[Path] = []
+    appdata = windows_appdata_from_wsl()
+    if appdata:
+        paths.append(appdata / "Cursor" / "User" / "globalStorage" / "state.vscdb")
+    users = Path("/mnt/c/Users")
+    if users.is_dir():
+        paths.extend(users.glob("*/AppData/Roaming/Cursor/User/globalStorage/state.vscdb"))
+    return paths
+
+
+def windows_appdata_from_wsl() -> Path | None:
+    try:
+        result = subprocess.run(
+            ["cmd.exe", "/c", "echo %APPDATA%"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = result.stdout.strip().replace("\r", "")
+    if not value or "%" in value:
+        return None
+    converted = convert_windows_path_in_wsl(value)
+    return converted if converted else None
+
+
+def convert_windows_path_in_wsl(value: str) -> Path | None:
+    try:
+        result = subprocess.run(
+            ["wslpath", "-u", value],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if len(value) >= 3 and value[1:3] == ":\\":
+        drive = value[0].lower()
+        rest = value[3:].replace("\\", "/")
+        return Path(f"/mnt/{drive}/{rest}")
+    return None
 
 
 def find_cursor_db(explicit: str | None = None) -> Path | None:
@@ -103,6 +165,9 @@ def find_cursor_db(explicit: str | None = None) -> Path | None:
 
 
 def cursor_processes() -> list[str]:
+    if sys.platform == "win32":
+        return windows_cursor_processes()
+
     names = ("Cursor", "cursor", "cursor-url-handler")
     found: list[str] = []
     for name in names:
@@ -117,6 +182,28 @@ def cursor_processes() -> list[str]:
             continue
         if result.returncode == 0:
             for pid in result.stdout.split():
+                found.append(f"{name}:{pid}")
+    return found
+
+
+def windows_cursor_processes() -> list[str]:
+    found: list[str] = []
+    for name in ("Cursor.exe", "cursor.exe"):
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            if line.lower().startswith(name.lower()):
+                parts = line.split()
+                pid = parts[1] if len(parts) > 1 else "?"
                 found.append(f"{name}:{pid}")
     return found
 

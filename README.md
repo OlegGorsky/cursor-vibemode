@@ -1,42 +1,74 @@
 # cursor-vibemode
 
-`cursor-vibemode` настраивает Cursor на работу через Vibemode/OpenAI-compatible API.
-
-Скрипт делает то, что обычная настройка Cursor часто не доводит до рабочего
-состояния: патчит реальное хранилище Cursor `state.vscdb`, записывает ключ,
+`cursor-vibemode` настраивает Cursor на работу через Vibemode/OpenAI-compatible
+API. Скрипт патчит реальное хранилище Cursor `state.vscdb`: записывает ключ,
 включает OpenAI BYOK, прописывает base URL и добавляет модели Vibemode в список
 доступных моделей.
 
 ## Быстрый запуск
 
-Закрой Cursor полностью, затем выполни:
+Перед запуском полностью закрой Cursor.
+
+Linux, macOS или WSL:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash
 ```
 
-Терминал попросит вставить Vibemode API key скрытым вводом. В обычном терминале
-будет показываться одна `*` на каждый символ. После ввода скрипт:
+Windows PowerShell:
 
-1. найдет Cursor `state.vscdb`;
-2. сделает backup базы;
-3. запишет ключ в `cursorAuth/openAIKey`;
-4. выставит `openAIBaseUrl = https://api.vibemod.pro/v1`;
-5. включит `useOpenAIKey = true`;
-6. добавит модели Vibemode;
-7. проверит API через `/v1/models`.
+```powershell
+irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex
+```
+
+Windows-скрипт настраивает Cursor в Windows и автоматически пробует настроить
+WSL, если `wsl.exe` есть и default distro уже инициализирован. Если WSL не
+установлен или не готов, он просто пропускается.
+
+Терминал попросит вставить Vibemode API key скрытым вводом. В обычном терминале
+будет показываться одна `*` на каждый символ.
+
+## Что делает скрипт
+
+1. находит Cursor `state.vscdb`;
+2. проверяет, что Cursor закрыт;
+3. делает backup базы;
+4. записывает ключ в `cursorAuth/openAIKey`;
+5. выставляет `openAIBaseUrl = https://api.vibemod.pro/v1`;
+6. включает `useOpenAIKey = true`;
+7. добавляет модели Vibemode;
+8. проверяет API через `/v1/models`.
 
 После успешной настройки открой Cursor заново.
 
-## Что именно меняется
+## Пути Cursor DB
 
-Cursor хранит AI-настройки не в обычном `settings.json`, а в SQLite-базе:
+Linux:
 
 ```text
 ~/.config/Cursor/User/globalStorage/state.vscdb
 ```
 
-Скрипт меняет записи:
+macOS:
+
+```text
+~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
+```
+
+Windows:
+
+```text
+%APPDATA%\Cursor\User\globalStorage\state.vscdb
+```
+
+WSL обычно использует Windows Cursor DB через `/mnt/c/...`. Скрипт умеет
+находить этот путь автоматически. Если внутри WSL установлен отдельный Linux
+Cursor и есть `~/.config/Cursor/User/globalStorage/state.vscdb`, он тоже может
+быть настроен.
+
+## Что именно меняется
+
+В SQLite-базе Cursor меняются записи:
 
 - `cursorAuth/openAIKey`
 - `src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl.persistentStorage.applicationUser`
@@ -46,6 +78,54 @@ Cursor хранит AI-настройки не в обычном `settings.json`
 
 ```text
 state.vscdb.bak-YYYYmmdd-HHMMSS
+```
+
+## Windows: полезные варианты
+
+Взять ключ из буфера обмена:
+
+```powershell
+$env:CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD
+```
+
+Пропустить проверку API:
+
+```powershell
+$env:CURSOR_VIBEMODE_SKIP_API_CHECK='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_SKIP_API_CHECK
+```
+
+Настроить конкретный WSL-дистрибутив:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1))) -WslDistro Ubuntu
+```
+
+Отключить WSL-часть:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1))) -NoWsl
+```
+
+## Linux/macOS/WSL: полезные варианты
+
+Пропустить проверку API:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --skip-api-check
+```
+
+Указать путь к Cursor DB вручную:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --db ~/.config/Cursor/User/globalStorage/state.vscdb
+```
+
+Автоматический запуск без prompt:
+
+```bash
+export CURSOR_VIBEMODE_KEY=sk-...
+curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --non-interactive
+unset CURSOR_VIBEMODE_KEY
 ```
 
 ## Локальный запуск из клона
@@ -66,32 +146,6 @@ cd cursor-vibemode
 ./cursor-vibemode disable
 ./cursor-vibemode enable
 ./cursor-vibemode remove --forget-key
-```
-
-## Опции
-
-Пропустить проверку API:
-
-```bash
-./cursor-vibemode setup --skip-api-check
-```
-
-Указать путь к Cursor DB вручную:
-
-```bash
-./cursor-vibemode setup --db ~/.config/Cursor/User/globalStorage/state.vscdb
-```
-
-Автоматический запуск без prompt:
-
-```bash
-CURSOR_VIBEMODE_KEY=sk-... ./cursor-vibemode setup --non-interactive
-```
-
-Через GitHub bootstrap с опциями:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i | bash -s -- --skip-api-check
 ```
 
 ## Важно
@@ -119,8 +173,16 @@ composerModel: gpt-5.4
 
 ## Требования
 
-- Linux/macOS с `bash`, `curl`, `tar`, `python3`
-- установленный и хотя бы один раз открытый Cursor
+Linux/macOS/WSL:
 
-На NixOS дополнительных пакетов обычно не нужно, если `curl`, `tar` и `python3`
-есть в системном профиле.
+- `bash`
+- `curl`
+- `tar`
+- `python3`
+
+Windows:
+
+- PowerShell
+- Python 3 в `PATH` или Python Launcher `py.exe`
+- Cursor, открытый хотя бы один раз
+- WSL опционален

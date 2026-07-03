@@ -63,6 +63,9 @@ def read_secret(label: str) -> str:
     stream = sys.stderr
     stream.write(label)
     stream.flush()
+    if sys.platform == "win32":
+        return read_windows_secret(stream)
+
     input_stream = open_tty_stdin()
     close_input = input_stream is not sys.stdin
     if not input_stream.isatty():
@@ -107,7 +110,41 @@ def read_secret(label: str) -> str:
     return "".join(value).strip()
 
 
+def read_windows_secret(stream) -> str:
+    if not sys.stdin.isatty():
+        value = sys.stdin.readline().strip()
+        stream.write("\n")
+        stream.flush()
+        return value
+
+    import msvcrt
+
+    value = []
+    while True:
+        char = msvcrt.getwch()
+        if char in {"\r", "\n"}:
+            stream.write("\n")
+            stream.flush()
+            break
+        if char == "\x03":
+            raise KeyboardInterrupt
+        if char == "\x08":
+            if value:
+                value.pop()
+                stream.write("\b \b")
+                stream.flush()
+            continue
+        if ord(char) < 32:
+            continue
+        value.append(char)
+        stream.write("*")
+        stream.flush()
+    return "".join(value).strip()
+
+
 def open_tty_stdin() -> TextIOWrapper:
+    if sys.platform == "win32":
+        return sys.stdin
     try:
         return open("/dev/tty", "r", encoding="utf-8")
     except OSError:
