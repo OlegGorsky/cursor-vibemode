@@ -62,14 +62,16 @@ def remove_local_key() -> bool:
 
 def read_secret(label: str) -> str:
     stream = sys.stderr
-    stream.write(label)
-    stream.flush()
     if sys.platform == "win32":
+        stream.write(label)
+        stream.flush()
         return read_windows_secret(stream)
 
     input_stream = open_tty_stdin()
     close_input = input_stream is not sys.stdin
     if not input_stream.isatty():
+        stream.write(label)
+        stream.flush()
         try:
             value = input_stream.readline().strip()
         finally:
@@ -87,17 +89,21 @@ def read_secret(label: str) -> str:
     value = []
     try:
         tty.setraw(fd)
+        stream.write(label)
+        stream.flush()
         while True:
-            char = input_stream.read(1)
-            if char in {"\r", "\n"}:
+            char = os.read(fd, 1)
+            if char in {b"\r", b"\n"}:
                 break
-            if char == "\x03":
+            if char == b"\x03":
                 raise KeyboardInterrupt
-            if char in {"\x7f", "\b"}:
+            if char in {b"\x7f", b"\b"}:
                 if value:
                     value.pop()
                     stream.write("\b \b")
                     stream.flush()
+                continue
+            if not char or char[0] < 32:
                 continue
             value.append(char)
             stream.write("*")
@@ -108,7 +114,7 @@ def read_secret(label: str) -> str:
             input_stream.close()
         stream.write("\n")
         stream.flush()
-    return "".join(value).strip()
+    return b"".join(value).decode("utf-8", errors="replace").strip()
 
 
 def read_windows_secret(stream) -> str:
