@@ -5,6 +5,9 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from argparse import Namespace
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
@@ -17,7 +20,7 @@ from cursor_vibemode.cursor_db import (
     set_openai_enabled,
 )
 from cursor_vibemode.keys import resolve_api_key, save_local_key
-from cursor_vibemode.operations import parse_model_list
+from cursor_vibemode.operations import is_cloudflare_browser_block, parse_model_list, setup_cursor
 from cursor_vibemode.paths import APP_USER_KEY, MARKER_KEY, OPENAI_KEY_STORAGE
 from cursor_vibemode.surfaces import detect_surfaces
 from cursor_vibemode.url_safety import host_warnings, is_private_host
@@ -122,6 +125,42 @@ class CursorVibemodeTests(unittest.TestCase):
         models = parse_model_list(None, ["gpt-5.4", "deepseek-v4-pro", "gpt-5.4"])
 
         self.assertEqual(models, ["gpt-5.4", "deepseek-v4-pro"])
+
+    def test_cloudflare_catalog_block_falls_back_during_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.vscdb"
+            make_db(db, {})
+            args = Namespace(
+                replace_key=False,
+                key="sk-test",
+                non_interactive=True,
+                base_url="https://api.vibemod.pro/v1",
+                models=None,
+                model="gpt-5.4",
+                no_backup=True,
+                no_save_key=True,
+                skip_api_check=False,
+                deep_api_check=False,
+            )
+            error = RuntimeError(
+                'HTTP 403 | {"error_code":1010,"error_name":"browser_signature_banned"}'
+            )
+
+            with mock.patch("cursor_vibemode.operations.check_models", side_effect=error):
+                output = StringIO()
+                with redirect_stdout(output):
+                    result = setup_cursor(args, db_path=db, title="setup")
+
+            status = read_status(db)
+            self.assertEqual(result, 0)
+            self.assertTrue(status.has_key)
+            self.assertIn("deepseek-v4-pro", status.registered_models)
+            self.assertIn("Cloudflare заблокировал", output.getvalue())
+
+    def test_cloudflare_browser_block_detector(self) -> None:
+        self.assertTrue(is_cloudflare_browser_block("Error 1010: Access denied"))
+        self.assertTrue(is_cloudflare_browser_block("browser_signature_banned"))
+        self.assertFalse(is_cloudflare_browser_block("HTTP 401 unauthorized"))
 
     def test_endpoint_routing_uses_responses_for_gpt_only(self) -> None:
         self.assertEqual(endpoint_for_model("gpt-5.4"), "responses")

@@ -35,6 +35,7 @@ def api_json(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 cursor-vibemode/0.1",
     }
     method = "GET"
     if payload is not None:

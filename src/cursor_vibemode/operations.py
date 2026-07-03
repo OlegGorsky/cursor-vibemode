@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from .api import EndpointCheck, check_model_endpoints, check_models
@@ -11,6 +12,12 @@ from .keys import resolve_api_key, save_local_key
 from .paths import DEFAULT_BASE_URL, VIBEMODE_MODELS
 from .surfaces import detect_surfaces
 from .url_safety import host_warnings
+
+
+@dataclass(frozen=True)
+class ApiCatalog:
+    models: list[str]
+    checked: bool
 
 
 def parse_model_list(value: str | None, api_models: list[str] | None = None) -> list[str]:
@@ -54,8 +61,8 @@ def setup_cursor(
     base_url = args.base_url.rstrip("/")
     warnings = host_warnings(base_url)
 
-    api_models = fetch_api_models(args, base_url, result.value)
-    models = parse_model_list(args.models, api_models)
+    catalog = fetch_api_models(args, base_url, result.value, warnings)
+    models = parse_model_list(args.models, catalog.models)
     backups = apply_setup(
         db_path,
         api_key=result.value,
@@ -79,24 +86,39 @@ def setup_cursor(
     if args.skip_api_check:
         print("Проверка API: пропущена")
         return 0
-    print_api_models(api_models, models)
+    if catalog.checked:
+        print_api_models(catalog.models, models)
+    else:
+        print("Проверка API: каталог не проверен, использован резервный список моделей")
     if args.deep_api_check:
         print_endpoint_checks(check_model_endpoints(base_url, result.value, models))
     return 0
 
 
-def fetch_api_models(args: argparse.Namespace, base_url: str, api_key: str) -> list[str]:
+def fetch_api_models(
+    args: argparse.Namespace,
+    base_url: str,
+    api_key: str,
+    warnings: list[str],
+) -> ApiCatalog:
     if args.skip_api_check:
-        return []
+        return ApiCatalog([], False)
     try:
         models = check_models(base_url, api_key)
     except RuntimeError as error:
+        detail = str(error)
+        if is_cloudflare_browser_block(detail):
+            warnings.append(
+                "Cloudflare заблокировал терминальную проверку каталога. "
+                "Настройка продолжена с резервным списком моделей."
+            )
+            return ApiCatalog([], False)
         raise CursorVibemodeError(
             "API_CATALOG_CHECK_FAILED",
             "не удалось проверить каталог моделей Vibemode",
             "API не ответил на запрос списка моделей.",
             "проверь ключ, интернет и base URL или запусти с --skip-api-check.",
-            str(error),
+            detail,
         ) from error
     if not models:
         raise CursorVibemodeError(
@@ -105,7 +127,17 @@ def fetch_api_models(args: argparse.Namespace, base_url: str, api_key: str) -> l
             "Vibemode API ответил, но не вернул ни одной модели.",
             "проверь ключ и провайдера или запусти с явным --models.",
         )
-    return models
+    return ApiCatalog(models, True)
+
+
+def is_cloudflare_browser_block(detail: str) -> bool:
+    lower = detail.lower()
+    return (
+        "error 1010" in lower
+        or "browser_signature_banned" in lower
+        or '"error_code":1010' in lower
+        or '"cloudflare_error":true' in lower
+    )
 
 
 def print_setup_result(
