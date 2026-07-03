@@ -22,7 +22,7 @@ curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex
+irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1|iex
 ```
 
 Windows-скрипт настраивает Cursor в Windows и автоматически пробует настроить
@@ -108,31 +108,31 @@ state.vscdb.bak-YYYYmmdd-HHMMSS
 Взять ключ из буфера обмена:
 
 ```powershell
-$env:CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD
+$env:CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD='1'; irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1|iex; Remove-Item Env:\CURSOR_VIBEMODE_KEY_FROM_CLIPBOARD
 ```
 
 Пропустить проверку API:
 
 ```powershell
-$env:CURSOR_VIBEMODE_SKIP_API_CHECK='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_SKIP_API_CHECK
+$env:CURSOR_VIBEMODE_SKIP_API_CHECK='1'; irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1|iex; Remove-Item Env:\CURSOR_VIBEMODE_SKIP_API_CHECK
 ```
 
 Запустить глубокую endpoint-проверку:
 
 ```powershell
-$env:CURSOR_VIBEMODE_DEEP_API_CHECK='1'; irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1 | iex; Remove-Item Env:\CURSOR_VIBEMODE_DEEP_API_CHECK
+$env:CURSOR_VIBEMODE_DEEP_API_CHECK='1'; irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1|iex; Remove-Item Env:\CURSOR_VIBEMODE_DEEP_API_CHECK
 ```
 
 Настроить конкретный WSL-дистрибутив:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1))) -WslDistro Ubuntu
+& ([scriptblock]::Create((irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1))) -WslDistro Ubuntu
 ```
 
 Отключить WSL-часть:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/OlegGorsky/cursor-vibemode/main/i.ps1))) -NoWsl
+& ([scriptblock]::Create((irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1))) -NoWsl
 ```
 
 ## Linux/macOS/WSL: полезные варианты
