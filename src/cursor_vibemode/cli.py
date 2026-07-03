@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .cursor_app import inspect_cursor_app
 from .cursor_db import (
     read_status,
     remove_openai_key,
@@ -76,13 +77,17 @@ def command_status(args: argparse.Namespace) -> int:
 
 def command_doctor(args: argparse.Namespace) -> int:
     db_path = find_cursor_db(args.db)
+    app = inspect_cursor_app(args.app_root)
     print("Диагностика Cursor Vibemode")
     print(f"Процессы Cursor: {', '.join(cursor_processes()) or 'не найдены'}")
+    print(f"Локальный режим Cursor: {app.display}")
     if db_path:
         code = print_status(db_path)
         print("")
         print("Для разработчика:")
         print(f"- база Cursor: {db_path}")
+        print(f"- приложение Cursor: {app.app_root or 'не найдено'}")
+        print(f"- приложение доступно для патча: {'да' if app.writable else 'нет'}")
         print(f"- локальный cache ключа: {local_auth_path()}")
         return code
     print("Подключение: не завершено")
@@ -164,6 +169,10 @@ def add_common_db_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--db", help="путь к профилю Cursor, если автоопределение не сработало")
 
 
+def add_app_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--app-root", help="путь к resources/app Cursor, если автоопределение не сработало")
+
+
 def add_write_safety_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--force", action="store_true", help="записать настройки, даже если Cursor открыт")
     parser.add_argument("--no-backup", action="store_true", help="не создавать резервную копию")
@@ -171,6 +180,7 @@ def add_write_safety_args(parser: argparse.ArgumentParser) -> None:
 
 def add_setup_args(parser: argparse.ArgumentParser) -> None:
     add_common_db_args(parser)
+    add_app_args(parser)
     add_write_safety_args(parser)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="адрес Vibemode API")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="основная модель")
@@ -182,6 +192,7 @@ def add_setup_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--replace-key", action="store_true", help="заменить сохраненный ключ")
     parser.add_argument("--non-interactive", action="store_true", help="не спрашивать ключ в терминале")
     parser.add_argument("--skip-api-check", action="store_true", help="не проверять API")
+    parser.add_argument("--skip-app-patch", action="store_true", help="не патчить приложение Cursor")
     parser.add_argument("--deep-api-check", action="store_true", help="проверить каждую модель коротким запросом")
     parser.add_argument("--no-save-key", action="store_true", help="не сохранять ключ в локальный cache")
 
@@ -192,6 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="Показать диагностику Cursor")
     add_common_db_args(doctor)
+    add_app_args(doctor)
     doctor.set_defaults(func=command_doctor)
 
     status = sub.add_parser("status", help="Показать состояние подключения")

@@ -8,6 +8,7 @@ param(
     [switch]$KeyFromClipboard,
     [switch]$NoWsl,
     [switch]$NoWindows,
+    [switch]$SkipAppPatch,
     [switch]$Force,
     [string]$WslDistro,
     [string]$Repo = "OlegGorsky/cursor-vibemode",
@@ -125,6 +126,9 @@ function Invoke-CursorSetup {
     if ($SkipApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_API_CHECK)) {
         $args += "--skip-api-check"
     }
+    if ($SkipAppPatch -or (Test-EnvFlag $env:CURSOR_VIBEMODE_SKIP_APP_PATCH)) {
+        $args += "--skip-app-patch"
+    }
     if ($DeepApiCheck -or (Test-EnvFlag $env:CURSOR_VIBEMODE_DEEP_API_CHECK)) {
         $args += "--deep-api-check"
     }
@@ -204,6 +208,7 @@ curl -fsSL \
 
 export CURSOR_VIBEMODE_KEY="$api_key"
 args=(setup --non-interactive --model "$model" --models "$models" --base-url "$base_url")
+args+=(--skip-app-patch)
 if [[ -n "$db_path" && -f "$db_path" ]]; then
   args+=(--db "$db_path")
 fi

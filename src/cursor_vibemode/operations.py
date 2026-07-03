@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .api import EndpointCheck, check_model_endpoints, check_models
+from .cursor_app import CursorAppPatchReport, patch_cursor_app
 from .cursor_db import apply_setup, read_openai_key, read_status, set_openai_enabled
 from .errors import CursorVibemodeError
 from .keys import resolve_api_key, save_local_key
@@ -56,6 +57,9 @@ def setup_cursor(
     title: str,
 ) -> int:
     surfaces_before = detect_surfaces(db_path)
+    app_report = None
+    if not getattr(args, "skip_app_patch", True):
+        app_report = patch_cursor_app(getattr(args, "app_root", None))
     existing_key = "" if args.replace_key else read_openai_key(db_path)
     result = resolve_api_key(
         explicit_key=args.key,
@@ -88,6 +92,7 @@ def setup_cursor(
         models,
         len(backups),
         warnings,
+        app_report,
     )
     if args.skip_api_check:
         print("Проверка API: пропущена")
@@ -153,10 +158,15 @@ def print_setup_result(
     models: list[str],
     backup_count: int,
     warnings: list[str],
+    app_report: CursorAppPatchReport | None = None,
 ) -> None:
     action = "Восстановление завершено" if title == "repaired" else "Настройка завершена"
     print(f"{action}: Vibemode подключен к Cursor.")
     print(f"Подключено для: {surfaces.display}")
+    if app_report:
+        print(f"Локальный режим Cursor: {app_report.display}")
+        if app_report.launcher:
+            print(f"Запуск Cursor: {app_report.launcher}")
     print(f"Моделей подключено: {len(models)}")
     print(f"Основная модель: {model}")
     if backup_count:
