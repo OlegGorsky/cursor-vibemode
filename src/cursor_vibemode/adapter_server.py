@@ -102,6 +102,9 @@ class VibemodeAdapterHandler(BaseHTTPRequestHandler):
                         return
         except urllib.error.HTTPError as error:
             body_bytes = error.read()
+            if path.startswith("/messages"):
+                self.write_anthropic_error(error.code, body_bytes)
+                return
             self.write_upstream_headers(error.code, dict(error.headers), len(body_bytes))
             try:
                 self.wfile.write(body_bytes)
@@ -164,6 +167,14 @@ class VibemodeAdapterHandler(BaseHTTPRequestHandler):
     def write_error(self, status: int, message: str) -> None:
         self.write_json({"error": {"message": message, "type": "adapter_error"}}, status)
 
+    def write_anthropic_error(self, status: int, body: bytes) -> None:
+        message = upstream_error_message(body)
+        error_type = "authentication_error" if status in {401, 403} else "api_error"
+        self.write_json(
+            {"type": "error", "error": {"type": error_type, "message": message}},
+            status,
+        )
+
     def log_message(self, format: str, *args: object) -> None:
         return
 
@@ -210,7 +221,7 @@ def proxy_path(path: str) -> str:
 def upstream_headers(headers: Any, path: str) -> dict[str, str]:
     result = {
         "Accept": headers.get("accept") or "application/json",
-        "User-Agent": headers.get("user-agent") or "CursorVibemodeAdapter/1",
+        "User-Agent": upstream_user_agent(headers.get("user-agent") or ""),
     }
     authorization = headers.get("authorization")
     inbound_api_key = headers.get("x-api-key")
@@ -220,10 +231,10 @@ def upstream_headers(headers: Any, path: str) -> dict[str, str]:
     if content_type:
         result["Content-Type"] = content_type
     if path.startswith("/messages"):
-        api_key = inbound_api_key or bearer_token(authorization or "")
+        api_key = select_api_key(authorization or "", inbound_api_key or "")
         if api_key:
             result["x-api-key"] = api_key
-            result.setdefault("Authorization", f"Bearer {api_key}")
+            result["Authorization"] = f"Bearer {api_key}"
         result["anthropic-version"] = headers.get("anthropic-version") or "2023-06-01"
         beta = headers.get("anthropic-beta")
         if beta:
@@ -234,3 +245,39 @@ def upstream_headers(headers: Any, path: str) -> dict[str, str]:
 def bearer_token(value: str) -> str:
     prefix = "Bearer "
     return value[len(prefix) :].strip() if value.startswith(prefix) else ""
+
+
+def upstream_user_agent(value: str) -> str:
+    clean = value.strip()
+    if not clean or clean.lower().startswith("python-urllib"):
+        return "Mozilla/5.0 cursor-vibemode/0.1"
+    return clean
+
+
+def select_api_key(authorization: str, x_api_key: str) -> str:
+    bearer = bearer_token(authorization)
+    if looks_like_vibemode_key(bearer):
+        return bearer
+    if looks_like_vibemode_key(x_api_key):
+        return x_api_key.strip()
+    return bearer or x_api_key.strip()
+
+
+def looks_like_vibemode_key(value: str) -> bool:
+    clean = value.strip()
+    return clean.startswith(("sk-", "sk_"))
+
+
+def upstream_error_message(body: bytes) -> str:
+    text = body.decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return sanitize_api_text(text, "")
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return sanitize_api_text(error["message"], "")
+        if isinstance(payload.get("message"), str):
+            return sanitize_api_text(payload["message"], "")
+    return sanitize_api_text(text, "")
