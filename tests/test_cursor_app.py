@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -113,9 +114,41 @@ class CursorAppPatchTests(unittest.TestCase):
             self.assertTrue(report.launcher and report.launcher.is_file())
             self.assertTrue(str(report.launcher).startswith(str(home)))
             self.assertIn("/bin/cursor", report.launcher.read_text(encoding="utf-8"))
+            self.assertFalse((report.app_root.parent.parent / "bin").is_symlink())
+            self.assertFalse((report.app_root.parent.parent / "bin" / "cursor").is_symlink())
             self.assertNotEqual(report.app_root, app_root)
             self.assertIn(LOCAL_MODE_DISABLED, (app_root / "out" / "main.js").read_text(encoding="utf-8"))
             self.assertIn(LOCAL_MODE_ENABLED, (report.app_root / "out" / "main.js").read_text(encoding="utf-8"))
+
+    @unittest.skipIf(__import__("sys").platform != "linux", "shadow copy fallback is Linux-only")
+    def test_existing_shadow_repairs_symlinked_bin_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source_root = base / "source" / "cursor"
+            app_root = source_root / "resources" / "app"
+            source_root.mkdir(parents=True)
+            (source_root / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
+            (source_root / "bin").mkdir()
+            (source_root / "bin" / "cursor").write_text("#!/bin/sh\n", encoding="utf-8")
+            make_app(app_root)
+            for rel in (
+                "product.json",
+                "out/main.js",
+                "out/vs/workbench/workbench.desktop.main.js",
+                "out/vs/workbench/workbench.glass.main.js",
+            ):
+                (app_root / rel).chmod(0o444)
+
+            env = {"HOME": str(base / "home"), "XDG_DATA_HOME": str(base / "xdg")}
+            with mock.patch.dict("os.environ", env, clear=False):
+                report = patch_cursor_app(str(app_root))
+                shadow_root = report.app_root.parent.parent
+                shutil.rmtree(shadow_root / "bin")
+                (shadow_root / "bin").symlink_to(source_root / "bin", target_is_directory=True)
+                repaired = patch_cursor_app(str(app_root))
+
+            self.assertFalse((repaired.app_root.parent.parent / "bin").is_symlink())
+            self.assertFalse((repaired.app_root.parent.parent / "bin" / "cursor").is_symlink())
 
 
 if __name__ == "__main__":

@@ -56,6 +56,7 @@ def existing_shadow_cursor_app(source_app_root: Path) -> ShadowCursorApp | None:
     dest_root = shadow_install_root(source_app_root)
     app_root = dest_root / "resources" / "app"
     if app_root.is_dir():
+        repair_shadow_entrypoints(source_app_root.parent.parent, dest_root)
         launcher = write_launcher(dest_root)
         desktop = write_desktop_entry(launcher)
         return ShadowCursorApp(app_root, launcher, desktop)
@@ -82,8 +83,35 @@ def mirror_install_root(source_root: Path, source_app_root: Path, dest_root: Pat
         dest = dest_root / item.name
         if item.name == "cursor" and item.is_file():
             copy_writable(item, dest, executable=True)
+        elif item.name == "bin" and item.is_dir():
+            mirror_bin_dir(item, dest)
         elif item.name == "resources" and item.is_dir():
             mirror_resources(item, source_app_root, dest)
+        else:
+            dest.symlink_to(item, target_is_directory=item.is_dir())
+
+
+def repair_shadow_entrypoints(source_root: Path, dest_root: Path) -> None:
+    source_exe = source_root / "cursor"
+    if source_exe.is_file():
+        copy_writable(source_exe, dest_root / "cursor", executable=True)
+    source_bin = source_root / "bin"
+    dest_bin = dest_root / "bin"
+    if source_bin.is_dir():
+        if dest_bin.is_symlink() or dest_bin.is_file():
+            dest_bin.unlink()
+        if not dest_bin.exists():
+            mirror_bin_dir(source_bin, dest_bin)
+        elif dest_bin.is_dir() and (source_bin / "cursor").is_file():
+            copy_writable(source_bin / "cursor", dest_bin / "cursor", executable=True)
+
+
+def mirror_bin_dir(source_bin: Path, dest_bin: Path) -> None:
+    dest_bin.mkdir()
+    for item in source_bin.iterdir():
+        dest = dest_bin / item.name
+        if item.name == "cursor" and item.is_file():
+            copy_writable(item, dest, executable=True)
         else:
             dest.symlink_to(item, target_is_directory=item.is_dir())
 
@@ -113,6 +141,8 @@ def mirror_app_tree(source_app: Path, dest_app: Path) -> None:
 
 def copy_writable(source: Path, dest: Path, *, executable: bool = False) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        dest.unlink()
     shutil.copy2(source, dest)
     dest.chmod(0o755 if executable else 0o644)
 
