@@ -1,0 +1,9 @@
+[project]
+name = "cursor-vibemode"
+version = "0.1.0"
+description = "Patch Cursor BYOK settings for Vibemode-compatible OpenAI routing."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
