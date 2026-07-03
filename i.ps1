@@ -78,8 +78,8 @@ function Read-ApiKey {
         Log "Читаю Vibemode key из буфера обмена"
         return Read-ClipboardKey
     }
-    $plain = Read-MaskedInput "Вставь Vibemode API key"
-    if (-not $plain -or -not $plain.Trim()) { Die "API-ключ не найден." }
+    $plain = Read-MaskedInput "Вставь Vibemode API key (Enter - использовать сохраненный)"
+    if (-not $plain -or -not $plain.Trim()) { return "" }
     return $plain.Trim()
 }
 
@@ -118,7 +118,11 @@ function Invoke-CursorSetup {
     param([string]$Root, [string]$DbPath, [string]$ApiKey)
     $python = Find-Python
     $env:PYTHONPATH = Join-Path $Root "src"
-    $env:CURSOR_VIBEMODE_KEY = $ApiKey
+    if ($ApiKey -and $ApiKey.Trim()) {
+        $env:CURSOR_VIBEMODE_KEY = $ApiKey
+    } else {
+        Remove-Item Env:\CURSOR_VIBEMODE_KEY -ErrorAction SilentlyContinue
+    }
     $args = @()
     if ($python.Args) { $args += $python.Args }
     $args += @("-m", "cursor_vibemode", "setup", "--non-interactive", "--db", $DbPath)

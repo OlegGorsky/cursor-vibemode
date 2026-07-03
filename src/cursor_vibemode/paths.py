@@ -15,6 +15,8 @@ MARKER_KEY = "__$__targetStorageMarker"
 
 DEFAULT_BASE_URL = "https://api.vibemod.pro/v1"
 DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_ADAPTER_PORT = 17654
+ADAPTER_VERSION = 2
 
 AGENT_MODES = (
     "composer",
@@ -79,6 +81,18 @@ def app_state_dir() -> Path:
 
 def local_auth_path() -> Path:
     return app_state_dir() / "auth.json"
+
+
+def adapter_config_path() -> Path:
+    return app_state_dir() / "adapter.json"
+
+
+def adapter_cache_path() -> Path:
+    return app_state_dir() / "models-cache.json"
+
+
+def adapter_runtime_dir() -> Path:
+    return app_state_dir() / "runtime"
 
 
 def cursor_config_roots() -> list[Path]:

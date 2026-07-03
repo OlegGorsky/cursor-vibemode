@@ -9,8 +9,14 @@ from argparse import Namespace
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
+from cursor_vibemode.adapter_models import (
+    api_types_for_model,
+    enrich_models,
+    fallback_catalog,
+)
 from cursor_vibemode.api import endpoint_for_model, endpoint_payload
 from cursor_vibemode.cursor_db import (
     apply_setup,
@@ -246,8 +252,13 @@ class CursorVibemodeTests(unittest.TestCase):
             )
 
             with mock.patch("cursor_vibemode.operations.check_models", side_effect=error):
+                adapter = SimpleNamespace(base_url="http://127.0.0.1:17654/v1")
+                patch_adapter = mock.patch(
+                    "cursor_vibemode.operations.ensure_adapter",
+                    return_value=adapter,
+                )
                 output = StringIO()
-                with redirect_stdout(output):
+                with patch_adapter, redirect_stdout(output):
                     result = setup_cursor(args, db_path=db, title="setup")
 
             status = read_status(db)
@@ -282,8 +293,13 @@ class CursorVibemodeTests(unittest.TestCase):
             with mock.patch.dict(os.environ, env, clear=True):
                 save_local_key("sk-reused")
                 with mock.patch("cursor_vibemode.keys.read_secret", return_value=""):
+                    adapter = SimpleNamespace(base_url="http://127.0.0.1:17654/v1")
+                    patch_adapter = mock.patch(
+                        "cursor_vibemode.operations.ensure_adapter",
+                        return_value=adapter,
+                    )
                     output = StringIO()
-                    with redirect_stdout(output):
+                    with patch_adapter, redirect_stdout(output):
                         result = setup_cursor(args, db_path=db, title="setup")
 
             self.assertEqual(result, 0)
@@ -308,6 +324,35 @@ class CursorVibemodeTests(unittest.TestCase):
         self.assertIn("messages", messages_payload)
         self.assertTrue(messages_payload["stream"])
         self.assertIn("messages", chat_payload)
+
+    def test_adapter_catalog_exposes_cursor_api_types(self) -> None:
+        self.assertEqual(api_types_for_model("gpt-5.5"), ["responses"])
+        self.assertEqual(api_types_for_model("glm-5.2"), ["chat_completions"])
+        self.assertEqual(api_types_for_model("qwen3.7-max"), ["anthropic_messages"])
+
+        payload = enrich_models(
+            {
+                "data": [
+                    {
+                        "id": "qwen3.7-plus",
+                        "context_window": 1_000_000,
+                        "capabilities": ["chat", "reasoning", "tools"],
+                    }
+                ]
+            }
+        )
+        model = payload["data"][0]
+        self.assertEqual(model["api_types"], ["anthropic_messages"])
+        self.assertEqual(model["capabilities"]["context_length"], 1_000_000)
+        self.assertTrue(model["capabilities"]["supports_tool_use"])
+
+    def test_adapter_fallback_catalog_contains_all_builtin_models(self) -> None:
+        models = {item["id"]: item for item in fallback_catalog()["data"]}
+
+        self.assertIn("gpt-5.5", models)
+        self.assertIn("qwen3.7-plus", models)
+        self.assertEqual(models["gpt-5.5"]["api_types"], ["responses"])
+        self.assertEqual(models["qwen3.7-plus"]["api_types"], ["anthropic_messages"])
 
     def test_private_url_warnings(self) -> None:
         self.assertTrue(is_private_host("127.0.0.1"))

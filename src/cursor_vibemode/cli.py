@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .adapter_server import run as run_adapter
 from .cursor_app import inspect_cursor_app
 from .cursor_db import (
     read_status,
@@ -22,7 +23,7 @@ from .paths import (
     local_auth_path,
 )
 from .surfaces import detect_surfaces
-from .url_safety import host_warnings
+from .url_safety import host_warnings, status_host_warnings
 
 
 def require_db(path: str | None) -> Path:
@@ -64,7 +65,7 @@ def print_status(db_path: Path) -> int:
     print(f"Моделей подключено: {len(status.registered_models)}")
     if status.composer_model:
         print(f"Основная модель: {status.composer_model}")
-    for warning in host_warnings(status.base_url):
+    for warning in status_host_warnings(status.base_url):
         if status.base_url:
             print(f"Предупреждение: {warning}")
     return 0 if status.has_item_table else 2
@@ -88,7 +89,7 @@ def command_doctor(args: argparse.Namespace) -> int:
         print(f"- база Cursor: {db_path}")
         print(f"- приложение Cursor: {app.app_root or 'не найдено'}")
         print(f"- приложение доступно для патча: {'да' if app.writable else 'нет'}")
-        print(f"- локальный cache ключа: {local_auth_path()}")
+        print(f"- локальное хранилище ключа: {local_auth_path()}")
         return code
     print("Подключение: не завершено")
     print("Причина: профиль Cursor не найден")
@@ -194,7 +195,7 @@ def add_setup_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--skip-api-check", action="store_true", help="не проверять API")
     parser.add_argument("--skip-app-patch", action="store_true", help="не патчить приложение Cursor")
     parser.add_argument("--deep-api-check", action="store_true", help="проверить каждую модель коротким запросом")
-    parser.add_argument("--no-save-key", action="store_true", help="не сохранять ключ в локальный cache")
+    parser.add_argument("--no-save-key", action="store_true", help="не сохранять ключ локально")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -259,8 +260,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_args = sys.argv[1:] if argv is None else argv
+    if raw_args == ["adapter", "serve"]:
+        try:
+            run_adapter()
+        except KeyboardInterrupt:
+            return 130
+        return 0
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_args)
     try:
         return args.func(args)
     except KeyboardInterrupt:

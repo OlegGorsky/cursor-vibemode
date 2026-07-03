@@ -209,7 +209,7 @@ def resolve_api_key(
         raise CursorVibemodeError(
             "API_KEY_MISSING",
             "ключ Vibemode не найден",
-            "Ключ не передан через --key, CURSOR_VIBEMODE_KEY или сохраненный cache.",
+            "Ключ не передан через --key, CURSOR_VIBEMODE_KEY или локальное хранилище.",
             "запусти setup без --non-interactive и вставь ключ в терминале.",
         )
     return prompt_new_key()

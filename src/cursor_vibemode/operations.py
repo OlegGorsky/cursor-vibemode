@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .api import EndpointCheck, check_model_endpoints, check_models
+from .adapter_service import ensure_adapter
 from .cursor_app import CursorAppPatchReport, patch_cursor_app
 from .cursor_db import apply_setup, read_openai_key, read_status, set_openai_enabled
 from .errors import CursorVibemodeError
 from .keys import resolve_api_key, save_local_key
 from .models import provider_model_id
-from .paths import DEFAULT_BASE_URL, VIBEMODE_MESSAGES_MODELS, VIBEMODE_MODELS
+from .paths import DEFAULT_BASE_URL, VIBEMODE_MODELS
 from .surfaces import detect_surfaces
 from .url_safety import host_warnings
 
@@ -50,15 +51,6 @@ def model_count(value: int) -> str:
     return f"{value} {word}"
 
 
-def messages_api_models(model_ids: list[str]) -> list[str]:
-    messages_models = set(VIBEMODE_MESSAGES_MODELS)
-    return [
-        provider_model_id(model_id)
-        for model_id in model_ids
-        if provider_model_id(model_id) in messages_models
-    ]
-
-
 def setup_cursor(
     args: argparse.Namespace,
     *,
@@ -81,16 +73,12 @@ def setup_cursor(
 
     catalog = fetch_api_models(args, base_url, result.value, warnings)
     models = parse_model_list(args.models, catalog.models)
-    if messages_api_models(models):
-        warnings.append(
-            "часть моделей Vibemode использует Messages API; Cursor видит их в списке, "
-            "но для запуска этих моделей нужен адаптер."
-        )
+    adapter = ensure_adapter(base_url)
     selected_model = provider_model_id(args.model)
     backups = apply_setup(
         db_path,
         api_key=result.value,
-        base_url=base_url,
+        base_url=adapter.base_url,
         model_id=selected_model,
         model_ids=models,
         backup=not args.no_backup,
