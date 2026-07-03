@@ -73,7 +73,7 @@ def setup_cursor(
 
     catalog = fetch_api_models(args, base_url, result.value, warnings)
     models = parse_model_list(args.models, catalog.models)
-    adapter = ensure_adapter(base_url)
+    adapter = ensure_adapter(base_url, result.value)
     selected_model = provider_model_id(args.model)
     backups = apply_setup(
         db_path,

@@ -16,7 +16,7 @@ MARKER_KEY = "__$__targetStorageMarker"
 DEFAULT_BASE_URL = "https://api.vibemod.pro/v1"
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_ADAPTER_PORT = 17654
-ADAPTER_VERSION = 3
+ADAPTER_VERSION = 4
 
 AGENT_MODES = (
     "composer",

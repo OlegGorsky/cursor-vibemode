@@ -6,8 +6,13 @@ import urllib.request
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
 
+from .adapter_http import (
+    proxy_path,
+    rewrite_messages_event,
+    upstream_error_message,
+    upstream_headers,
+)
 from .adapter_models import CatalogCache, enrich_models, fallback_catalog
 from .api import sanitize_api_text
 from .paths import (
@@ -23,6 +28,7 @@ class AdapterConfig:
     host: str = "127.0.0.1"
     port: int = 17654
     cache_ttl_seconds: int = 300
+    api_key: str = ""
 
     @property
     def base_url(self) -> str:
@@ -85,21 +91,16 @@ class VibemodeAdapterHandler(BaseHTTPRequestHandler):
 
     def stream_upstream(self, path: str, body: bytes | None) -> None:
         url = self.config.upstream_base_url.rstrip("/") + path
-        headers = upstream_headers(self.headers, path)
+        headers = upstream_headers(self.headers, path, self.config.api_key)
         method = "POST" if body is not None else "GET"
         request = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
                 self.write_upstream_headers(response.status, dict(response.headers))
-                while True:
-                    chunk = response.read(8192)
-                    if not chunk:
-                        break
-                    try:
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
-                        return
+                if path.startswith("/messages"):
+                    self.stream_messages_response(response)
+                else:
+                    self.stream_raw_response(response)
         except urllib.error.HTTPError as error:
             body_bytes = error.read()
             if path.startswith("/messages"):
@@ -128,6 +129,37 @@ class VibemodeAdapterHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(content_length))
         self.end_headers()
 
+    def stream_raw_response(self, response) -> None:
+        while True:
+            chunk = response.read(8192)
+            if not chunk:
+                break
+            if not self.write_bytes(chunk):
+                return
+
+    def stream_messages_response(self, response) -> None:
+        pending = b""
+        while True:
+            chunk = response.read(8192)
+            if not chunk:
+                break
+            pending += chunk
+            parts = pending.split(b"\n\n")
+            pending = parts.pop()
+            for part in parts:
+                if not self.write_bytes(rewrite_messages_event(part + b"\n\n")):
+                    return
+        if pending:
+            self.write_bytes(rewrite_messages_event(pending))
+
+    def write_bytes(self, chunk: bytes) -> bool:
+        try:
+            self.wfile.write(chunk)
+            self.wfile.flush()
+            return True
+        except (BrokenPipeError, ConnectionResetError):
+            return False
+
     def fetch_upstream_json(self, path: str) -> dict[str, Any]:
         response = self.fetch_upstream_raw(path)
         if response.status >= 400:
@@ -141,7 +173,7 @@ class VibemodeAdapterHandler(BaseHTTPRequestHandler):
 
     def fetch_upstream_raw(self, path: str, body: bytes | None = None) -> UpstreamResponse:
         url = self.config.upstream_base_url.rstrip("/") + path
-        headers = upstream_headers(self.headers, path)
+        headers = upstream_headers(self.headers, path, self.config.api_key)
         method = "POST" if body is not None else "GET"
         request = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
@@ -193,6 +225,7 @@ def load_config() -> AdapterConfig:
         host=str(data.get("host") or "127.0.0.1"),
         port=int(data.get("port") or 17654),
         cache_ttl_seconds=int(data.get("cache_ttl_seconds") or 300),
+        api_key=str(data.get("api_key") or ""),
     )
 
 
@@ -205,79 +238,3 @@ def run() -> None:
         config.cache_ttl_seconds,
     )
     server.serve_forever()
-
-
-def proxy_path(path: str) -> str:
-    parsed = urlparse(path)
-    clean = parsed.path
-    if clean.startswith("/v1/"):
-        clean = clean[3:]
-    elif clean == "/v1":
-        clean = ""
-    query = f"?{parsed.query}" if parsed.query else ""
-    return clean + query
-
-
-def upstream_headers(headers: Any, path: str) -> dict[str, str]:
-    result = {
-        "Accept": headers.get("accept") or "application/json",
-        "User-Agent": upstream_user_agent(headers.get("user-agent") or ""),
-    }
-    authorization = headers.get("authorization")
-    inbound_api_key = headers.get("x-api-key")
-    if authorization:
-        result["Authorization"] = authorization
-    content_type = headers.get("content-type")
-    if content_type:
-        result["Content-Type"] = content_type
-    if path.startswith("/messages"):
-        api_key = select_api_key(authorization or "", inbound_api_key or "")
-        if api_key:
-            result["x-api-key"] = api_key
-            result["Authorization"] = f"Bearer {api_key}"
-        result["anthropic-version"] = headers.get("anthropic-version") or "2023-06-01"
-        beta = headers.get("anthropic-beta")
-        if beta:
-            result["anthropic-beta"] = beta
-    return result
-
-
-def bearer_token(value: str) -> str:
-    prefix = "Bearer "
-    return value[len(prefix) :].strip() if value.startswith(prefix) else ""
-
-
-def upstream_user_agent(value: str) -> str:
-    clean = value.strip()
-    if not clean or clean.lower().startswith("python-urllib"):
-        return "Mozilla/5.0 cursor-vibemode/0.1"
-    return clean
-
-
-def select_api_key(authorization: str, x_api_key: str) -> str:
-    bearer = bearer_token(authorization)
-    if looks_like_vibemode_key(bearer):
-        return bearer
-    if looks_like_vibemode_key(x_api_key):
-        return x_api_key.strip()
-    return bearer or x_api_key.strip()
-
-
-def looks_like_vibemode_key(value: str) -> bool:
-    clean = value.strip()
-    return clean.startswith(("sk-", "sk_"))
-
-
-def upstream_error_message(body: bytes) -> str:
-    text = body.decode("utf-8", errors="replace")
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return sanitize_api_text(text, "")
-    if isinstance(payload, dict):
-        error = payload.get("error")
-        if isinstance(error, dict) and isinstance(error.get("message"), str):
-            return sanitize_api_text(error["message"], "")
-        if isinstance(payload.get("message"), str):
-            return sanitize_api_text(payload["message"], "")
-    return sanitize_api_text(text, "")

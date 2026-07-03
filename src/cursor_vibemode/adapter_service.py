@@ -27,9 +27,9 @@ class AdapterReport:
     port: int
 
 
-def ensure_adapter(upstream_base_url: str) -> AdapterReport:
+def ensure_adapter(upstream_base_url: str, api_key: str = "") -> AdapterReport:
     port = choose_port()
-    write_config(upstream_base_url, port)
+    write_config(upstream_base_url, port, api_key)
     install_runtime()
     write_launchers()
     install_autostart()
@@ -75,7 +75,7 @@ def read_config_port() -> int | None:
         return None
 
 
-def write_config(upstream_base_url: str, port: int) -> None:
+def write_config(upstream_base_url: str, port: int, api_key: str = "") -> None:
     path = adapter_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
@@ -83,6 +83,7 @@ def write_config(upstream_base_url: str, port: int) -> None:
         "host": "127.0.0.1",
         "port": port,
         "cache_ttl_seconds": 300,
+        "api_key": api_key,
     }
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
