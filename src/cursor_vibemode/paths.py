@@ -41,6 +41,19 @@ VIBEMODE_MODELS = (
     "vibe-lite-1.5",
 )
 
+VIBEMODE_RESPONSE_MODELS = (
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.5",
+)
+
+VIBEMODE_MESSAGES_MODELS = (
+    "minimax-m3",
+    "qwen3.7-max",
+    "qwen3.7-plus",
+    "vibe-lite-1.5",
+)
+
 MODEL_LABELS = {
     "deepseek-v4-flash": "DeepSeek V4 Flash [Vibemode]",
     "deepseek-v4-pro": "DeepSeek V4 Pro [Vibemode]",

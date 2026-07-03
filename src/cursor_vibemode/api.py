@@ -6,6 +6,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from .paths import VIBEMODE_MESSAGES_MODELS, VIBEMODE_RESPONSE_MODELS
+
 
 @dataclass(frozen=True)
 class EndpointCheck:
@@ -66,6 +68,47 @@ def api_json(
     return payload if isinstance(payload, dict) else {}
 
 
+def request_headers(api_key: str, path: str) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 cursor-vibemode/0.1",
+    }
+    if path == "/messages":
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+    return headers
+
+
+def api_status(
+    base_url: str,
+    api_key: str,
+    path: str,
+    *,
+    payload: dict[str, Any],
+    timeout: int = 30,
+) -> None:
+    url = base_url.rstrip("/") + path
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=request_headers(api_key, path),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response.read(1)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        detail = sanitize_api_text(body, api_key)
+        raise RuntimeError(f"HTTP {error.code} | {detail}") from error
+    except urllib.error.URLError as error:
+        detail = sanitize_api_text(str(error.reason), api_key)
+        raise RuntimeError(detail) from error
+
+
 def check_models(base_url: str, api_key: str, timeout: int = 30) -> list[str]:
     payload = api_json(base_url, api_key, "/models", timeout=timeout)
     models = [item.get("id") for item in payload.get("data", []) if isinstance(item, dict)]
@@ -74,26 +117,41 @@ def check_models(base_url: str, api_key: str, timeout: int = 30) -> list[str]:
 
 def endpoint_for_model(model_id: str) -> str:
     lower = model_id.lower()
-    return "responses" if lower.startswith("gpt-") else "chat/completions"
+    if lower in VIBEMODE_MESSAGES_MODELS:
+        return "messages"
+    if lower in VIBEMODE_RESPONSE_MODELS or lower.startswith("gpt-"):
+        return "responses"
+    return "chat/completions"
 
 
 def endpoint_path(endpoint: str) -> str:
-    return "/responses" if endpoint == "responses" else "/chat/completions"
+    if endpoint == "responses":
+        return "/responses"
+    if endpoint == "messages":
+        return "/messages"
+    return "/chat/completions"
 
 
 def endpoint_payload(model_id: str, endpoint: str) -> dict[str, Any]:
     if endpoint == "responses":
         return {
             "model": model_id,
-            "input": "Reply with ok.",
+            "input": [{"role": "user", "content": "Reply with ok."}],
             "max_output_tokens": 8,
-            "stream": False,
+            "stream": True,
+        }
+    if endpoint == "messages":
+        return {
+            "model": model_id,
+            "messages": [{"role": "user", "content": "Reply with ok."}],
+            "max_tokens": 8,
+            "stream": True,
         }
     return {
         "model": model_id,
         "messages": [{"role": "user", "content": "Reply with ok."}],
         "max_tokens": 8,
-        "stream": False,
+        "stream": True,
     }
 
 
@@ -106,7 +164,7 @@ def check_model_endpoint(
 ) -> EndpointCheck:
     endpoint = endpoint_for_model(model_id)
     try:
-        api_json(
+        api_status(
             base_url,
             api_key,
             endpoint_path(endpoint),

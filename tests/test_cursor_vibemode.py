@@ -295,10 +295,18 @@ class CursorVibemodeTests(unittest.TestCase):
         self.assertEqual(endpoint_for_model("GPT-5.4-mini"), "responses")
         self.assertEqual(endpoint_for_model("deepseek-v4-pro"), "chat/completions")
         self.assertEqual(endpoint_for_model("kimi-k2.6"), "chat/completions")
+        self.assertEqual(endpoint_for_model("minimax-m3"), "messages")
+        self.assertEqual(endpoint_for_model("qwen3.7-plus"), "messages")
+        self.assertEqual(endpoint_for_model("vibe-lite-1.5"), "messages")
 
         responses_payload = endpoint_payload("gpt-5.4", "responses")
+        messages_payload = endpoint_payload("qwen3.7-max", "messages")
         chat_payload = endpoint_payload("deepseek-v4-pro", "chat/completions")
         self.assertIn("input", responses_payload)
+        self.assertIsInstance(responses_payload["input"], list)
+        self.assertTrue(responses_payload["stream"])
+        self.assertIn("messages", messages_payload)
+        self.assertTrue(messages_payload["stream"])
         self.assertIn("messages", chat_payload)
 
     def test_private_url_warnings(self) -> None:
