@@ -14,6 +14,7 @@ from unittest import mock
 from cursor_vibemode.api import endpoint_for_model, endpoint_payload
 from cursor_vibemode.cursor_db import (
     apply_setup,
+    backup_database,
     read_openai_key,
     read_status,
     remove_openai_key,
@@ -247,6 +248,20 @@ class CursorVibemodeTests(unittest.TestCase):
             self.assertTrue(app_user["useOpenAIKey"])
             self.assertEqual(key_value, "sk-test")
             self.assertEqual(marker[OPENAI_KEY_STORAGE], 0)
+
+    def test_backup_cleanup_keeps_only_recent_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.vscdb"
+            make_db(db, {})
+            for index in range(5):
+                old = db.with_name(f"state.vscdb.bak-2020010{index + 1}-000000")
+                old.write_text("old", encoding="utf-8")
+
+            backup_database(db)
+
+            backups = sorted(db.parent.glob("state.vscdb.bak-*"))
+            self.assertLessEqual(len(backups), 3)
+            self.assertFalse((db.parent / "state.vscdb.bak-20200101-000000").exists())
 
     def test_enable_disable_and_remove(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

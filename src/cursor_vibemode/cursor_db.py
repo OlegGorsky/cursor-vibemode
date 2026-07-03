@@ -43,7 +43,19 @@ def backup_database(db_path: Path) -> list[Path]:
         except OSError:
             pass
         backups.append(backup)
+    cleanup_old_backups(db_path)
     return backups
+
+
+def cleanup_old_backups(db_path: Path, keep: int = 3) -> None:
+    for path in (db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm")):
+        pattern = f"{path.name}.bak-*"
+        backups = sorted(path.parent.glob(pattern), key=lambda item: item.name, reverse=True)
+        for old_backup in backups[keep:]:
+            try:
+                old_backup.unlink()
+            except OSError:
+                pass
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

@@ -19,22 +19,10 @@ Linux, macOS или WSL:
 curl -fsSL https://github.com/OlegGorsky/cursor-vibemode/raw/main/i|bash
 ```
 
-Если GitHub отдал старую версию установщика:
-
-```bash
-curl -fsSL "https://github.com/OlegGorsky/cursor-vibemode/raw/main/i?$(date +%s)"|bash
-```
-
 Windows PowerShell:
 
 ```powershell
 irm https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1|iex
-```
-
-Если GitHub отдал старую версию установщика:
-
-```powershell
-irm "https://github.com/OlegGorsky/cursor-vibemode/raw/main/i.ps1?$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"|iex
 ```
 
 Windows-скрипт настраивает Cursor в Windows и автоматически пробует настроить
@@ -255,7 +243,7 @@ Cursor. Вручную можно выбрать режим:
 - Перед `repair` Cursor тоже должен быть закрыт.
 - Скрипт не читает `~/.codex`, `~/.codex2` и `CODEX_KEY`.
 - Обычный `setup` получает ключ прямо в терминале.
-- Ключ может быть сохранен только в локальный cache `~/.cursor-vibemode/auth.json`.
+- Ключ может быть сохранен только локально в `~/.cursor-vibemode/auth.json`.
 - Если Cursor не был открыт ни разу, `state.vscdb` может еще не существовать.
 - Cursor может блокировать `localhost`, `127.0.0.1` и private network URL как
   Override OpenAI Base URL. Для локального прокси обычно нужен публичный HTTPS
