@@ -28,8 +28,6 @@ def upstream_headers(headers: Any, path: str, configured_api_key: str = "") -> d
     api_key = select_api_key(configured_api_key, authorization, inbound_api_key)
     if api_key:
         result["Authorization"] = f"Bearer {api_key}"
-    elif authorization:
-        result["Authorization"] = authorization
     content_type = header_value(headers, "content-type")
     if content_type:
         result["Content-Type"] = content_type
@@ -67,14 +65,14 @@ def upstream_user_agent(value: str) -> str:
 
 
 def select_api_key(configured: str, authorization: str, x_api_key: str) -> str:
-    if looks_like_vibemode_key(configured):
+    if configured.strip():
         return configured.strip()
     bearer = bearer_token(authorization)
     if looks_like_vibemode_key(bearer):
         return bearer
     if looks_like_vibemode_key(x_api_key):
         return x_api_key.strip()
-    return bearer or x_api_key.strip()
+    return ""
 
 
 def bearer_token(value: str) -> str:

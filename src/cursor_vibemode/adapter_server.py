@@ -15,6 +15,7 @@ from .adapter_http import (
 )
 from .adapter_models import CatalogCache, enrich_models, fallback_catalog
 from .api import sanitize_api_text
+from .keys import saved_local_key
 from .paths import (
     ADAPTER_VERSION,
     adapter_cache_path,
@@ -220,12 +221,13 @@ class UpstreamResponse:
 
 def load_config() -> AdapterConfig:
     data = json.loads(adapter_config_path().read_text(encoding="utf-8"))
+    api_key = str(data.get("api_key") or "").strip() or saved_local_key()
     return AdapterConfig(
         upstream_base_url=str(data["upstream_base_url"]).rstrip("/"),
         host=str(data.get("host") or "127.0.0.1"),
         port=int(data.get("port") or 17654),
         cache_ttl_seconds=int(data.get("cache_ttl_seconds") or 300),
-        api_key=str(data.get("api_key") or ""),
+        api_key=api_key,
     )
 
 
