@@ -14,7 +14,7 @@ OPENAI_KEY_STORAGE = "cursorAuth/openAIKey"
 MARKER_KEY = "__$__targetStorageMarker"
 
 DEFAULT_BASE_URL = "https://api.vibemod.pro/v1"
-DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_ADAPTER_PORT = 17654
 ADAPTER_VERSION = 5
 
@@ -31,9 +31,11 @@ VIBEMODE_MODELS = (
     "deepseek-v4-pro",
     "glm-5.1",
     "glm-5.2",
-    "gpt-5.4",
     "gpt-5.4-mini",
     "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
     "kimi-k2.6",
     "mimo-v2.5",
     "mimo-v2.5-pro",
@@ -44,9 +46,11 @@ VIBEMODE_MODELS = (
 )
 
 VIBEMODE_RESPONSE_MODELS = (
-    "gpt-5.4",
     "gpt-5.4-mini",
     "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
 )
 
 VIBEMODE_MESSAGES_MODELS = (
@@ -61,9 +65,11 @@ MODEL_LABELS = {
     "deepseek-v4-pro": "DeepSeek V4 Pro [Vibemode]",
     "glm-5.1": "GLM 5.1 [Vibemode]",
     "glm-5.2": "GLM 5.2 [Vibemode]",
-    "gpt-5.4": "GPT-5.4 [Vibemode]",
     "gpt-5.4-mini": "GPT-5.4 Mini [Vibemode]",
     "gpt-5.5": "GPT-5.5 [Vibemode]",
+    "gpt-5.6-luna": "GPT-5.6 Luna [Vibemode]",
+    "gpt-5.6-sol": "GPT-5.6 Sol [Vibemode]",
+    "gpt-5.6-terra": "GPT-5.6 Terra [Vibemode]",
     "kimi-k2.6": "Kimi K2.6 [Vibemode]",
     "mimo-v2.5": "MiMo V2.5 [Vibemode]",
     "mimo-v2.5-pro": "MiMo V2.5 Pro [Vibemode]",

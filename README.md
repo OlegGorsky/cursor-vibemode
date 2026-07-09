@@ -51,9 +51,10 @@ WSL, если `wsl.exe` есть и default distro уже инициализир
 
 После успешной настройки открой Cursor заново.
 
-Скрипт использует реальные ID моделей Vibemode (`gpt-5.4`, `gpt-5.5`,
-`deepseek-v4-pro` и т.д.) и при повторном запуске очищает старые служебные
-алиасы вида `vibemode-gpt-5.4`, если они остались после прошлых версий.
+Скрипт использует реальные ID моделей Vibemode (`gpt-5.4-mini`, `gpt-5.5`,
+`gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `deepseek-v4-pro` и т.д.)
+и при повторном запуске очищает старые служебные алиасы вида `vibemode-*`,
+если они остались после прошлых версий.
 
 Обычный успешный вывод выглядит так:
 
@@ -62,10 +63,10 @@ WSL, если `wsl.exe` есть и default distro уже инициализир
 Подключено для: редактор и агентное окно
 Локальный режим Cursor: включен
 Запуск Cursor: /home/user/.local/bin/cursor-vibemode
-Моделей подключено: 14
-Основная модель: gpt-5.4
+Моделей подключено: 16
+Основная модель: gpt-5.6-terra
 Резервная копия: создана
-Проверка API: каталог доступен (14 моделей)
+Проверка API: каталог доступен (16 моделей)
 ```
 
 Если что-то не сработало, скрипт выводит код ошибки, причину и строку для
@@ -196,7 +197,7 @@ cd cursor-vibemode
 ```bash
 ./cursor-vibemode doctor
 ./cursor-vibemode status
-./cursor-vibemode setup --model gpt-5.4
+./cursor-vibemode setup --model gpt-5.6-terra
 ./cursor-vibemode repair
 ./cursor-vibemode verify
 ./cursor-vibemode watch
@@ -227,7 +228,7 @@ Cursor. Вручную можно выбрать режим:
 ```bash
 ./cursor-vibemode setup --models auto      # default, все из /models
 ./cursor-vibemode setup --models builtin   # встроенный резервный список
-./cursor-vibemode setup --models gpt-5.4,deepseek-v4-pro
+./cursor-vibemode setup --models gpt-5.6-terra,deepseek-v4-pro
 ```
 
 Запустить глубокую проверку после установки:
@@ -270,8 +271,8 @@ Cursor. Вручную можно выбрать режим:
 Статус Cursor Vibemode
 Подключение: включено
 Подключено для: редактор и агентное окно
-Моделей подключено: 14
-Основная модель: gpt-5.4
+Моделей подключено: 16
+Основная модель: gpt-5.6-terra
 ```
 
 ## Требования

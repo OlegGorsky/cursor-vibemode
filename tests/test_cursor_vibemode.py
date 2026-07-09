@@ -307,7 +307,7 @@ class CursorVibemodeTests(unittest.TestCase):
             self.assertIn("Настройка завершена", output.getvalue())
 
     def test_endpoint_routing_uses_responses_for_gpt_only(self) -> None:
-        self.assertEqual(endpoint_for_model("gpt-5.4"), "responses")
+        self.assertEqual(endpoint_for_model("gpt-5.6-luna"), "responses")
         self.assertEqual(endpoint_for_model("GPT-5.4-mini"), "responses")
         self.assertEqual(endpoint_for_model("deepseek-v4-pro"), "chat/completions")
         self.assertEqual(endpoint_for_model("kimi-k2.6"), "chat/completions")
@@ -315,7 +315,7 @@ class CursorVibemodeTests(unittest.TestCase):
         self.assertEqual(endpoint_for_model("qwen3.7-plus"), "messages")
         self.assertEqual(endpoint_for_model("vibe-lite-1.5"), "messages")
 
-        responses_payload = endpoint_payload("gpt-5.4", "responses")
+        responses_payload = endpoint_payload("gpt-5.6-terra", "responses")
         messages_payload = endpoint_payload("qwen3.7-max", "messages")
         chat_payload = endpoint_payload("deepseek-v4-pro", "chat/completions")
         self.assertIn("input", responses_payload)
@@ -326,7 +326,7 @@ class CursorVibemodeTests(unittest.TestCase):
         self.assertIn("messages", chat_payload)
 
     def test_adapter_catalog_exposes_cursor_api_types(self) -> None:
-        self.assertEqual(api_types_for_model("gpt-5.5"), ["responses"])
+        self.assertEqual(api_types_for_model("gpt-5.6-sol"), ["responses"])
         self.assertEqual(api_types_for_model("glm-5.2"), ["chat_completions"])
         self.assertEqual(api_types_for_model("qwen3.7-max"), ["anthropic_messages"])
 
@@ -349,9 +349,15 @@ class CursorVibemodeTests(unittest.TestCase):
     def test_adapter_fallback_catalog_contains_all_builtin_models(self) -> None:
         models = {item["id"]: item for item in fallback_catalog()["data"]}
 
+        self.assertIn("gpt-5.4-mini", models)
         self.assertIn("gpt-5.5", models)
+        self.assertIn("gpt-5.6-luna", models)
+        self.assertIn("gpt-5.6-sol", models)
+        self.assertIn("gpt-5.6-terra", models)
         self.assertIn("qwen3.7-plus", models)
-        self.assertEqual(models["gpt-5.5"]["api_types"], ["responses"])
+        self.assertNotIn("gpt-5.4", models)
+        self.assertEqual(models["gpt-5.6-terra"]["api_types"], ["responses"])
+        self.assertEqual(models["gpt-5.6-luna"]["capabilities"]["context_length"], 128_000)
         self.assertEqual(models["qwen3.7-plus"]["api_types"], ["anthropic_messages"])
 
     def test_private_url_warnings(self) -> None:

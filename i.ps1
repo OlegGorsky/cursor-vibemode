@@ -1,5 +1,5 @@
 param(
-    [string]$Model = "gpt-5.4",
+    [string]$Model = "gpt-5.6-terra",
     [string]$Models = "auto",
     [string]$BaseUrl = "https://api.vibemod.pro/v1",
     [switch]$SkipApiCheck,

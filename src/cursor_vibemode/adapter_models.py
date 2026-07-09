@@ -17,9 +17,11 @@ MODEL_CONTEXT_WINDOWS = {
     "deepseek-v4-pro": 1_000_000,
     "glm-5.1": 203_000,
     "glm-5.2": 203_000,
-    "gpt-5.4": 272_000,
     "gpt-5.4-mini": 272_000,
     "gpt-5.5": 272_000,
+    "gpt-5.6-luna": 128_000,
+    "gpt-5.6-sol": 272_000,
+    "gpt-5.6-terra": 272_000,
     "kimi-k2.6": 262_000,
     "mimo-v2.5": 1_000_000,
     "mimo-v2.5-pro": 1_000_000,
@@ -131,8 +133,16 @@ def fallback_model(model_id: str) -> dict[str, Any]:
 
 
 def fallback_capabilities(model_id: str) -> list[str]:
-    if model_id in {"gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "minimax-m3"}:
+    if model_id in {
+        "gpt-5.4-mini",
+        "gpt-5.5",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "minimax-m3",
+    }:
         return ["chat", "vision", "reasoning"]
+    if model_id == "gpt-5.6-luna":
+        return ["chat", "reasoning"]
     if model_id.startswith("qwen"):
         return ["chat", "reasoning", "tools"]
     if model_id.startswith(("deepseek", "glm", "mimo")):
